@@ -284,8 +284,8 @@ def arp_kontrol_et():
             tip_açıklamaları = {
                 "multiple_ips": "Birden fazla IP'ye sahip MAC adresleri",
                 "gateway_multiple_macs": "Birden fazla MAC'e sahip ağ geçidi",
-                "broadcast_mac": "Broadcast MAC adresleri",
-                "multicast_mac": "Multicast MAC adresleri"
+                "info_broadcast": "Broadcast MAC adresleri",
+                "info_multicast": "Multicast MAC adresleri"
             }
             açıklama = tip_açıklamaları.get(tip, tip)
             print(f"- {açıklama}: {sayı}")
@@ -306,33 +306,33 @@ def arp_kontrol_et():
 # Geçmiş verilerini saklama ve yükleme
 def save_scan_history(scan_result, is_safe):
     """Tarama sonucunu geçmişe kaydeder"""
-    history_file = os.path.join(tempfile.gettempdir(), "arp_scanner_history.json")
-    
-    # Mevcut geçmişi yükle
-    if os.path.exists(history_file):
-        try:
-            with open(history_file, 'r', encoding='utf-8') as f:
-                history = json.load(f)
-        except:
-            history = []
-    else:
-        history = []
-    
-    # Yeni sonucu ekle
-    new_entry = {
-        "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "result": scan_result,
-        "is_safe": is_safe
-    }
-    
-    history.append(new_entry)
-    
-    # Maksimum 100 kayıt tut
-    if len(history) > 100:
-        history = history[-100:]
-    
-    # Geçmişi kaydet
     try:
+        history_file = os.path.join(tempfile.gettempdir(), "arp_scanner_history.json")
+        
+        # Mevcut geçmişi yükle
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, 'r', encoding='utf-8') as f:
+                    history = json.load(f)
+            except json.JSONDecodeError:
+                history = []
+        else:
+            history = []
+        
+        # Yeni sonucu ekle
+        new_entry = {
+            "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "result": scan_result,
+            "is_safe": is_safe
+        }
+        
+        history.append(new_entry)
+        
+        # Maksimum 100 kayıt tut
+        if len(history) > 100:
+            history = history[-100:]
+        
+        # Geçmişi kaydet
         with open(history_file, 'w', encoding='utf-8') as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
     except Exception as e:
@@ -340,17 +340,22 @@ def save_scan_history(scan_result, is_safe):
 
 def load_scan_history():
     """Tarama geçmişini yükler"""
-    history_file = os.path.join(tempfile.gettempdir(), "arp_scanner_history.json")
-    
-    if os.path.exists(history_file):
-        try:
-            with open(history_file, 'r', encoding='utf-8') as f:
-                history = json.load(f)
-            return history
-        except Exception as e:
-            print(f"Geçmiş yüklenirken hata oluştu: {e}")
-    
-    return []
+    try:
+        history_file = os.path.join(tempfile.gettempdir(), "arp_scanner_history.json")
+        
+        if os.path.exists(history_file):
+            try:
+                with open(history_file, 'r', encoding='utf-8') as f:
+                    history = json.load(f)
+                return history
+            except Exception as e:
+                print(f"Geçmiş yüklenirken hata oluştu: {e}")
+                return []
+        
+        return []
+    except Exception as e:
+        print(f"Geçmiş yüklenme hatası: {e}")
+        return []
 
 
 # ============= GRAFİK KULLANICI ARAYÜZÜ =============
@@ -379,10 +384,15 @@ class RoundedFrame(tk.Frame):
         # Boyut değişiminde yeniden çiz
         self.bind("<Configure>", self._on_resize)
     
-    def _on_resize(self, event):
+    def _on_resize(self, event=None):
         """Frame boyutu değiştiğinde yuvarlak köşeli dikdörtgeni yeniden çizer"""
-        width = event.width
-        height = event.height
+        if event:
+            width = event.width
+            height = event.height
+        else:
+            width = self.winfo_width()
+            height = self.winfo_height()
+
         self.canvas.delete("all")  # Tüm çizimleri temizle
         self.rounded_rect(0, 0, width, height, self.corner_radius, self.bg_color)
     
@@ -445,6 +455,14 @@ class SpotifyButton(tk.Canvas):
         if "text" in kwargs:
             self.text = kwargs["text"]
             self.itemconfig(self.button_text, text=self.text)
+    
+    def cget(self, option):
+        """Widget özelliğini döndürür"""
+        if option == "state":
+            return self.state
+        elif option == "text":
+            return self.text
+        return tk.Canvas.cget(self, option)
     
     def rounded_rect(self, x1, y1, x2, y2, r, fill_color):
         """Yuvarlak köşeli dikdörtgen çizer"""
@@ -723,7 +741,8 @@ class AnimatedChart(tk.Canvas):
         self.animation_step = 0
         self.point_ids = []
         self.line_id = None
-        self.animate_draw()
+        if self.data:
+            self.animate_draw()
     
     def animate_draw(self):
         """Grafiği animasyonlu olarak çizer"""
@@ -731,7 +750,7 @@ class AnimatedChart(tk.Canvas):
             return
             
         # Verilerin maks ve min değerlerini bul
-        values = [point["value"] for point in self.data]
+        values = [point.get("value", 0) for point in self.data]
         max_value = max(values) if values else 0
         min_value = min(values) if values else 0
         
@@ -774,7 +793,8 @@ class AnimatedChart(tk.Canvas):
         
         for i in range(points_to_draw):
             point = self.data[i]
-            x, y = get_point_coords(i, point["value"])
+            value = point.get("value", 0)
+            x, y = get_point_coords(i, value)
             coords.extend([x, y])
             
             # Nokta çiz
@@ -796,18 +816,18 @@ class AnimatedChart(tk.Canvas):
         if self.animation_step < len(self.data) - 1:
             self.animation_step += 1
             self.after(100, self.animate_draw)
-        else:
+        elif len(self.data) > 0:
             # Son noktanın detaylarını göster
-            if self.data:
-                last_point = self.data[-1]
-                last_x, last_y = get_point_coords(len(self.data) - 1, last_point["value"])
-                self.create_text(
-                    last_x, last_y - 15, 
-                    text=f"{last_point['value']}",
-                    fill="#FFFFFF", 
-                    font=("Arial", 9, "bold"),
-                    tags="chart"
-                )
+            last_point = self.data[-1]
+            value = last_point.get("value", 0)
+            last_x, last_y = get_point_coords(len(self.data) - 1, value)
+            self.create_text(
+                last_x, last_y - 15, 
+                text=f"{value}",
+                fill="#FFFFFF", 
+                font=("Arial", 9, "bold"),
+                tags="chart"
+            )
 
 # Animasyonlu kayan panel
 class SlidePanel(tk.Frame):
@@ -1015,7 +1035,7 @@ class ARP_GUI_Spotify:
         self.setup_layout()
         
         # Parçacık animasyonunu başlat
-        self.particles = ParticleAnimationCanvas(self.content_area, 600, 400, bg_color=self.bg_color)
+        self.particles = None
         
         # İçerikleri yükle
         self.load_home_content()
@@ -1034,7 +1054,7 @@ class ARP_GUI_Spotify:
         self.last_scan_time = None
         
         # Tema animasyonu
-        self.root.after(100, lambda: self._animate_startup())
+        self.root.after(100, self._animate_startup)
     
     def _animate_startup(self):
         """Başlangıç animasyonunu oynatır"""
@@ -1050,17 +1070,17 @@ class ARP_GUI_Spotify:
                 self.root.after(delay, lambda c=child: self._fade_in(c))
         
         # Parçacık animasyonu
-        particles = ParticleAnimationCanvas(self.content_area, 800, 400, bg_color=self.bg_color)
-        particles.place(x=0, y=0, relwidth=1, relheight=1)
-        particles.start_animation(50)
+        self.particles = ParticleAnimationCanvas(self.content_area, 800, 400, bg_color=self.bg_color)
+        self.particles.place(x=0, y=0, relwidth=1, relheight=1)
+        self.particles.start_animation(50)
         
         # 3 saniye sonra animasyonu durdur
-        self.root.after(3000, particles.stop_animation)
-        self.root.after(3500, particles.destroy)
+        self.root.after(3000, lambda: self.particles.stop_animation() if self.particles else None)
+        self.root.after(3500, lambda: self.particles.destroy() if self.particles else None)
     
     def _fade_in(self, widget, step=0, steps=10):
         """Widget'ı kademeli olarak gösterir"""
-        if step <= steps:
+        if step <= steps and widget.winfo_exists():
             # Renk interpolasyonu
             r, g, b = 0, 0, 0  # Başlangıç rengi (siyah)
             target_r, target_g, target_b = 0, 0, 0  # Hedef renk (sidebar_color - siyah)
@@ -1086,7 +1106,7 @@ class ARP_GUI_Spotify:
             
             # Çocuk widgetlar
             for child in widget.winfo_children():
-                if isinstance(child, tk.Label):
+                if isinstance(child, tk.Label) and child.winfo_exists():
                     # Opaklığı ayarla
                     opacity = ratio
                     intensity = int(255 * opacity)
@@ -1095,13 +1115,13 @@ class ARP_GUI_Spotify:
             
             # Sonraki adım
             self.root.after(30, lambda: self._fade_in(widget, step + 1, steps))
-        else:
+        elif widget.winfo_exists():
             # Son adım - normal renklere döndür
             widget.configure(bg=self.sidebar_color)
             
             # Çocuk widgetlar
             for child in widget.winfo_children():
-                if isinstance(child, tk.Label):
+                if isinstance(child, tk.Label) and child.winfo_exists():
                     child.configure(fg=self.text_color)
     
     def setup_layout(self):
@@ -1193,6 +1213,9 @@ class ARP_GUI_Spotify:
     
     def _animate_sidebar_hover(self, frame, enter):
         """Sidebar butonuna hover animasyonu ekler"""
+        if not frame.winfo_exists():
+            return
+            
         target_color = "#282828" if enter else self.sidebar_color
         current_color = frame["bg"]
         
@@ -1209,13 +1232,14 @@ class ARP_GUI_Spotify:
             return f'#{int(r):02x}{int(g):02x}{int(b):02x}'
         
         def animate_step(step):
-            if step <= steps:
+            if step <= steps and frame.winfo_exists():
                 color = interpolate_color(current_color, target_color, step, steps)
                 frame.configure(background=color)
                 
                 # Alt widget'ların rengini de güncelle
                 for child in frame.winfo_children():
-                    child.configure(background=color)
+                    if child.winfo_exists():
+                        child.configure(background=color)
                 
                 frame.after(20, lambda: animate_step(step + 1))
         
@@ -1223,17 +1247,21 @@ class ARP_GUI_Spotify:
     
     def _animate_sidebar_click(self, frame, command):
         """Sidebar butona tıklama animasyonu ekler"""
+        if not frame.winfo_exists():
+            return
+            
         original_bg = frame["bg"]
         target_bg = self.accent_color
         
         # Kısa bir parlaklık efekti
         frame.configure(background=target_bg)
         for child in frame.winfo_children():
-            child.configure(background=target_bg)
+            if child.winfo_exists():
+                child.configure(background=target_bg)
         
         # Orijinal renge geri dön
-        self.root.after(150, lambda: frame.configure(background=original_bg))
-        self.root.after(150, lambda: [child.configure(background=original_bg) for child in frame.winfo_children()])
+        self.root.after(150, lambda: frame.configure(background=original_bg) if frame.winfo_exists() else None)
+        self.root.after(150, lambda: [child.configure(background=original_bg) for child in frame.winfo_children() if child.winfo_exists() and frame.winfo_exists()])
         
         # Komutu çalıştır
         self.root.after(150, command)
@@ -1442,10 +1470,13 @@ class ARP_GUI_Spotify:
                      lambda e, c=card, tc=content: self._animate_card_hover(c, tc, True))
             widget.bind("<Leave>", 
                      lambda e, c=card, tc=content: self._animate_card_hover(c, tc, False))
-            widget.bind("<Button-1>", lambda e: self._animate_card_click(card, command))
+            widget.bind("<Button-1>", lambda e, c=card: self._animate_card_click(c, command))
     
     def _animate_card_hover(self, card, content, enter):
         """Kart hover animasyonu"""
+        if not card.winfo_exists() or not content.winfo_exists():
+            return
+            
         target_color = self.card_hover if enter else self.card_color
         current_color = card.bg_color
         
@@ -1462,7 +1493,7 @@ class ARP_GUI_Spotify:
             return f'#{int(r):02x}{int(g):02x}{int(b):02x}'
         
         def animate_step(step):
-            if step <= steps:
+            if step <= steps and card.winfo_exists() and content.winfo_exists():
                 color = interpolate_color(current_color, target_color, step, steps)
                 card.bg_color = color
                 card.canvas.configure(background=color)
@@ -1470,7 +1501,8 @@ class ARP_GUI_Spotify:
                 
                 # Alt widget'ların rengini de güncelle
                 for child in content.winfo_children():
-                    child.configure(background=color)
+                    if child.winfo_exists():
+                        child.configure(background=color)
                 
                 card.after(20, lambda: animate_step(step + 1))
         
@@ -1478,21 +1510,27 @@ class ARP_GUI_Spotify:
     
     def _animate_card_click(self, card, command):
         """Kart tıklama animasyonu"""
+        if not card.winfo_exists():
+            return
+            
         original_scale = 1.0
         min_scale = 0.95
         
         def animate_scale(scale, direction):
+            if not card.winfo_exists():
+                return
+                
             if direction == "down":  # Küçültme
                 if scale > min_scale:
                     new_scale = scale - 0.01
-                    card._on_resize(None)  # Yeniden boyutlandırma efekti
+                    card._on_resize()  # Yeniden boyutlandırma efekti
                     card.after(10, lambda: animate_scale(new_scale, "down"))
                 else:
                     card.after(50, lambda: animate_scale(min_scale, "up"))
             else:  # Büyütme
                 if scale < original_scale:
                     new_scale = scale + 0.01
-                    card._on_resize(None)  # Yeniden boyutlandırma efekti
+                    card._on_resize()  # Yeniden boyutlandırma efekti
                     card.after(10, lambda: animate_scale(new_scale, "up"))
                 else:
                     command()  # İşlemi tamamla
@@ -1637,7 +1675,7 @@ class ARP_GUI_Spotify:
         steps = 50
         
         def update_step(step):
-            if step <= steps:
+            if step <= steps and self.circular_progress.winfo_exists():
                 progress = step / steps * 100
                 self.circular_progress.update_progress(progress)
                 
@@ -1721,26 +1759,35 @@ class ARP_GUI_Spotify:
                 self.root.after(0, self.start_periodic_scan)
             else:
                 # İlerleme çubuğunu kapat ve düğmeyi etkinleştir
-                self.root.after(0, lambda: self.circular_progress.update_progress(100))
-                self.root.after(1000, lambda: self.circular_progress.pack_forget())
-                self.root.after(1000, lambda: self.scan_button.configure(state=tk.NORMAL))
+                if self.circular_progress.winfo_exists():
+                    self.root.after(0, lambda: self.circular_progress.update_progress(100))
+                    self.root.after(1000, lambda: self.circular_progress.pack_forget() if self.circular_progress.winfo_exists() else None)
+                
+                self.root.after(1000, lambda: self.scan_button.configure(state=tk.NORMAL) if self.scan_button.winfo_exists() else None)
                 self.root.after(1000, lambda: self.status_var.set("Tarama tamamlandı"))
                 
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("Hata", f"Tarama sırasında hata: {str(e)}"))
-            self.root.after(0, lambda: self.circular_progress.pack_forget())
-            self.root.after(0, lambda: self.scan_button.configure(state=tk.NORMAL))
+            if self.circular_progress.winfo_exists():
+                self.root.after(0, lambda: self.circular_progress.pack_forget())
+                
+            if self.scan_button.winfo_exists():
+                self.root.after(0, lambda: self.scan_button.configure(state=tk.NORMAL))
+                
             self.root.after(0, lambda: self.status_var.set("Tarama hatası"))
     
     def _update_ui(self, is_safe, important_lines, suspicious_entries):
         """Tarama sonuçlarına göre arayüzü günceller"""
+        if not self.status_icon.winfo_exists() or not self.status_title.winfo_exists() or not self.status_text.winfo_exists():
+            return
+            
         # Gerçekten tehlikeli durumları filtrele - info_broadcast_multicast tipindeki girdileri hariç tut
         real_threats = [entry for entry in suspicious_entries if entry.get("type") not in ["info_broadcast_multicast", "info_other"]]
         
         # Gerçekten tehlike var mı kontrol et
         is_truly_safe = len(real_threats) == 0
         
-        # Sonuç kartını güncelle
+               # Sonuç kartını güncelle
         if is_truly_safe:
             self._animate_result_update(
                 icon=self.icons["success"],
@@ -1763,6 +1810,9 @@ class ARP_GUI_Spotify:
                 self.root.after(500, lambda: self.show_warning(real_threats))
         
         # Sonuç metnini güncelle
+        if not self.result_text.winfo_exists():
+            return
+            
         self.result_text.config(state=tk.NORMAL)
         
         for line in important_lines:
@@ -1782,6 +1832,9 @@ class ARP_GUI_Spotify:
     
     def _animate_result_update(self, icon, title, title_color, message, card_color):
         """Sonuç panelini animasyonlu günceller"""
+        if not self.status_icon.winfo_exists() or not self.status_title.winfo_exists() or not self.status_text.winfo_exists():
+            return
+            
         # Önceki içerik
         current_icon = self.status_icon.cget("text")
         current_title = self.status_title.cget("text")
@@ -1790,688 +1843,42 @@ class ARP_GUI_Spotify:
         
         # İçeriği soluklaştır
         def fade_out(alpha=1.0, step=0, steps=5):
-            if step < steps:
-                self.status_icon.configure(fg=f"#{int(255*alpha):02x}{int(255*alpha):02x}{int(255*alpha):02x}")
-                self.status_title.configure(fg=f"#{int(255*alpha):02x}{int(255*alpha):02x}{int(255*alpha):02x}")
-                self.status_text.configure(fg=f"#{int(200*alpha):02x}{int(200*alpha):02x}{int(200*alpha):02x}")
+            if step < steps and self.status_icon.winfo_exists() and self.status_title.winfo_exists() and self.status_text.winfo_exists():
+                new_alpha = alpha - (alpha / steps)
+                self.status_icon.configure(fg=f"#{int(255*new_alpha):02x}{int(255*new_alpha):02x}{int(255*new_alpha):02x}")
+                self.status_title.configure(fg=f"#{int(255*new_alpha):02x}{int(255*new_alpha):02x}{int(255*new_alpha):02x}")
+                self.status_text.configure(fg=f"#{int(255*new_alpha):02x}{int(255*new_alpha):02x}{int(255*new_alpha):02x}")
+                self.root.after(50, lambda: fade_out(new_alpha, step+1, steps))
+            elif self.status_icon.winfo_exists() and self.status_title.winfo_exists() and self.status_text.winfo_exists():
+                # İçeriği güncelle
+                self.status_icon.configure(text=icon, fg=self.text_color)
+                self.status_title.configure(text=title, fg=title_color)
+                self.status_text.configure(text=message, fg="#B3B3B3")
                 
-                # Bir sonraki adım
-                new_alpha = alpha - (1.0 / steps)
-                self.root.after(50, lambda: fade_out(new_alpha, step + 1, steps))
-            else:
-                # İçeriği değiştir
-                self.status_icon.configure(text=icon)
-                self.status_title.configure(text=title)
-                self.status_text.configure(text=message)
-                
-                # Card rengini değiştir
-                self._animate_card_color_change(current_card_color, card_color)
+                # Kartın rengini değiştir
+                self.result_card.bg_color = card_color
+                self.result_card.canvas.configure(background=card_color)
                 
                 # Yeni içeriği kademeli göster
                 fade_in()
         
         # İçeriği kademeli göster
         def fade_in(alpha=0.0, step=0, steps=10):
-            if step < steps:
-                # Icon rengi
-                icon_color = f"#{int(255*alpha):02x}{int(255*alpha):02x}{int(255*alpha):02x}"
-                self.status_icon.configure(fg=icon_color)
+            if step < steps and self.status_icon.winfo_exists() and self.status_title.winfo_exists() and self.status_text.winfo_exists():
+                new_alpha = alpha + ((1.0 - alpha) / steps)
+                if step < steps / 2:  # İkonu önce göster
+                    self.status_icon.configure(fg=f"#{int(255*new_alpha):02x}{int(255*new_alpha):02x}{int(255*new_alpha):02x}")
                 
-                # Başlık rengi - hedef renge doğru kademeli
-                r, g, b = int(title_color[1:3], 16), int(title_color[3:5], 16), int(title_color[5:7], 16)
-                title_r = int(r * alpha)
-                title_g = int(g * alpha)
-                title_b = int(b * alpha)
-                title_color_faded = f"#{title_r:02x}{title_g:02x}{title_b:02x}"
-                self.status_title.configure(fg=title_color_faded)
+                if step > steps / 4:  # Sonra başlık
+                    self.status_title.configure(fg=title_color)
                 
-                # Mesaj rengi
-                message_color = f"#{int(180*alpha):02x}{int(180*alpha):02x}{int(180*alpha):02x}"
-                self.status_text.configure(fg=message_color)
+                if step > steps / 2:  # En son mesaj
+                    self.status_text.configure(fg=f"#{int(179*new_alpha):02x}{int(179*new_alpha):02x}{int(179*new_alpha):02x}")
                 
-                # Bir sonraki adım
-                new_alpha = alpha + (1.0 / steps)
-                self.root.after(50, lambda: fade_in(new_alpha, step + 1, steps))
+                self.root.after(50, lambda: fade_in(new_alpha, step+1, steps))
         
         # Animasyonu başlat
         fade_out()
-    
-    def _animate_card_color_change(self, start_color, end_color, steps=10):
-        """Kart arka plan rengini kademeli değiştirir"""
-        r1, g1, b1 = int(start_color[1:3], 16), int(start_color[3:5], 16), int(start_color[5:7], 16)
-        r2, g2, b2 = int(end_color[1:3], 16), int(end_color[3:5], 16), int(end_color[5:7], 16)
-        
-        def animate_step(step):
-            if step <= steps:
-                # Easing fonksiyonu - yavaşlayan hareket
-                t = step / steps
-                ease = 1 - (1 - t) * (1 - t)  # Ease-out quad
-                
-                # Ara renk
-                r = r1 + (r2 - r1) * ease
-                g = g1 + (g2 - g1) * ease
-                b = b1 + (b2 - b1) * ease
-                color = f'#{int(r):02x}{int(g):02x}{int(b):02x}'
-                
-                # Rengi uygula
-                self.result_card.bg_color = color
-                self.result_card.canvas.configure(background=color)
-                
-                # Çocuk widget'ları güncelle
-                for child in self.result_card.winfo_children():
-                    child.configure(background=color)
-                    for grandchild in child.winfo_children():
-                        if isinstance(grandchild, tk.Label) or isinstance(grandchild, tk.Frame):
-                            grandchild.configure(background=color)
-                
-                # Bir sonraki adım
-                self.root.after(50, lambda: animate_step(step + 1))
-        
-        # Animasyonu başlat
-        animate_step(0)
-    
-    def show_warning(self, suspicious_entries):
-        """Şüpheli durumlar için uyarı penceresi gösterir"""
-        # Önceki pencereyi kapat
-        if self.warning_window and self.warning_window.winfo_exists():
-            self.warning_window.destroy()
-        
-        # Yeni uyarı penceresi
-        self.warning_window = Toplevel(self.root)
-        self.warning_window.title("Güvenlik Uyarısı")
-        self.warning_window.geometry("500x450")
-        self.warning_window.configure(bg=self.bg_color)
-        self.warning_window.transient(self.root)
-        self.warning_window.grab_set()
-        
-        # Animasyon için başlangıç durumu
-        self.warning_window.attributes('-alpha', 0.0)
-        
-        # İçerik
-        content = tk.Frame(self.warning_window, bg=self.bg_color, padx=20, pady=20)
-        content.pack(fill=tk.BOTH, expand=True)
-        
-        # Başlık ve ikon
-        header = tk.Frame(content, bg=self.bg_color)
-        header.pack(fill=tk.X, pady=(0, 15))
-        
-        # Uyarı ikonu
-        icon = tk.Label(header, text=self.icons["warning"], font=("Arial", 36), 
-                      fg=self.warning_color, bg=self.bg_color)
-        icon.pack(side=tk.LEFT, padx=(0, 15))
-        
-        header_text = tk.Frame(header, bg=self.bg_color)
-        header_text.pack(side=tk.LEFT)
-        
-        warning_title = tk.Label(header_text, text="Güvenlik Uyarısı", 
-                              font=("Arial", 16, "bold"), 
-                              fg=self.warning_color, bg=self.bg_color)
-        warning_title.pack(anchor=tk.W)
-        
-        warning_subtitle = tk.Label(header_text, text="ARP spoofing riski tespit edildi", 
-                                 font=("Arial", 12), 
-                                 fg="#B3B3B3", bg=self.bg_color)
-        warning_subtitle.pack(anchor=tk.W)
-        
-        # Açıklama kartı
-        description_card = RoundedFrame(content, bg_color=self.card_color, corner_radius=10)
-        description_card.pack(fill=tk.X, pady=10)
-        
-        description_content = tk.Frame(description_card, bg=self.card_color)
-        description_content.place(relx=0.5, rely=0.5, anchor=tk.CENTER, relwidth=0.9, relheight=0.8)
-        
-        description = tk.Label(description_content, 
-                            text="""ARP spoofing, ağınızda kötü niyetli bir cihazın kendisini başka bir cihaz 
-                                 gibi göstererek trafiği dinlemesi veya değiştirmesi durumudur.
-                                 
-                                 Bu saldırı, kredi kartı bilgileri, şifreler ve diğer hassas bilgilerin 
-                                 çalınmasına yol açabilir.""",
-                            wraplength=430, justify=tk.LEFT, 
-                            bg=self.card_color, fg=self.text_color, font=("Arial", 10))
-        description.pack(fill=tk.X)
-        
-        # Tespit edilen tehditler
-        threats_label = tk.Label(content, text="Tespit Edilen Tehditler:", 
-                              font=("Arial", 12, "bold"), 
-                              bg=self.bg_color, fg=self.text_color)
-        threats_label.pack(anchor=tk.W, pady=(15, 5))
-        
-        # Tehditler kartı
-        threats_card = RoundedFrame(content, bg_color=self.card_color, corner_radius=10)
-        threats_card.pack(fill=tk.X, pady=(0, 10))
-        
-        threats_content = tk.Frame(threats_card, bg=self.card_color)
-        threats_content.place(relx=0.5, rely=0.5, anchor=tk.CENTER, relwidth=0.9, relheight=0.8)
-        
-        for entry in suspicious_entries:
-            message = entry.get("message", "")
-            if message:
-                threat_label = tk.Label(threats_content, text=message, 
-                                     wraplength=430, justify=tk.LEFT, 
-                                     bg=self.card_color, fg=self.text_color, font=("Arial", 10))
-                threat_label.pack(pady=2, anchor=tk.W)
-        
-        # Önerilen önlemler kartı
-        actions_label = tk.Label(content, text="Önerilen Önlemler:", 
-                              font=("Arial", 12, "bold"), 
-                              bg=self.bg_color, fg=self.text_color)
-        actions_label.pack(anchor=tk.W, pady=(15, 5))
-        
-        actions_card = RoundedFrame(content, bg_color=self.card_color, corner_radius=10)
-        actions_card.pack(fill=tk.X, pady=(0, 10))
-        
-        actions_content = tk.Frame(actions_card, bg=self.card_color)
-        actions_content.place(relx=0.5, rely=0.5, anchor=tk.CENTER, relwidth=0.9, relheight=0.8)
-        
-        # Önerilen önlemler listesi
-        actions = [
-            "Ağ bağlantınızı hemen kesin veya güvenli olmayan ağlarda hassas işlemler yapmaktan kaçının.",
-            "Ağ yöneticinize durumu bildirin.",
-            "VPN kullanarak ağ trafiğinizi şifreleyin.",
-            "HTTPS bağlantıları ve güvenli iletişim protokolleri kullanın.",
-            "Statik ARP girdileri ekleyerek kritik cihazların MAC adreslerini sabitleyin."
-        ]
-        
-        for i, action in enumerate(actions):
-            action_frame = tk.Frame(actions_content, bg=self.card_color)
-            action_frame.pack(fill=tk.X, pady=2)
-            
-            bullet = tk.Label(action_frame, text="•", font=("Arial", 12, "bold"),
-                           bg=self.card_color, fg=self.accent_color)
-            bullet.pack(side=tk.LEFT, padx=(0, 5))
-            
-            action_text = tk.Label(action_frame, text=action, wraplength=400, justify=tk.LEFT,
-                                font=("Arial", 10), bg=self.card_color, fg=self.text_color)
-            action_text.pack(side=tk.LEFT, fill=tk.X, expand=True, anchor=tk.W)
-        
-        # Kapat butonu
-        close_btn = SpotifyButton(content, text="Anladım", command=self.warning_window.destroy,
-                              width=100, height=35, bg_color=self.accent_color)
-        close_btn.pack(side=tk.RIGHT, pady=10)
-        
-        # Pencereyi ortala
-        self.warning_window.update_idletasks()
-        width = self.warning_window.winfo_width()
-        height = self.warning_window.winfo_height()
-        x = (self.warning_window.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.warning_window.winfo_screenheight() // 2) - (height // 2)
-        self.warning_window.geometry('{}x{}+{}+{}'.format(width, height, x, y))
-        
-        # Yavaşça göster
-        def fade_in(alpha=0.0):
-            alpha += 0.1
-            self.warning_window.attributes('-alpha', alpha)
-            
-            if alpha < 1.0:
-                self.warning_window.after(20, lambda: fade_in(alpha))
-        
-        # Animasyonu başlat
-        fade_in()
-    
-    def load_history_content(self):
-        """Tarama geçmişi ekranını yükler"""
-        self.clear_content()
-        
-        # Başlık
-        header = tk.Frame(self.content_area, bg=self.bg_color)
-        header.pack(fill=tk.X, padx=30, pady=(30, 20))
-        
-        title = tk.Label(header, text="Tarama Geçmişi", 
-                       font=("Arial", 24, "bold"), 
-                       bg=self.bg_color, fg=self.text_color)
-        title.pack(anchor=tk.W)
-        
-        subtitle = tk.Label(header, 
-                         text="Önceki taramaların sonuçlarını görüntüleyin", 
-                         font=("Arial", 12), 
-                         bg=self.bg_color, fg="#B3B3B3")
-        subtitle.pack(anchor=tk.W, pady=(5, 0))
-        
-        # Geçmiş verilerini yükle
-        history = load_scan_history()
-        
-        if history:
-            # Geçmiş istatistikleri 
-            stats_frame = tk.Frame(self.content_area, bg=self.bg_color)
-            stats_frame.pack(fill=tk.X, padx=30, pady=(0, 15))
-            
-            # Güvenlik grafiği için veri oluştur
-            chart_data = []
-            safe_count = 0
-            threat_count = 0
-            
-            for i, entry in enumerate(history):
-                is_safe = entry.get("is_safe", True)
-                chart_data.append({
-                    "date": entry.get("date", f"Tarama {i+1}"),
-                    "value": 100 if is_safe else 0,  # Güvenli: 100, Tehlikeli: 0
-                    "is_safe": is_safe
-                })
-                
-                if is_safe:
-                    safe_count += 1
-                else:
-                    threat_count += 1
-            
-            # Güvenlik durumu grafiği
-            chart_frame = RoundedFrame(stats_frame, bg_color=self.card_color, corner_radius=10)
-            chart_frame.pack(fill=tk.X, pady=10)
-            
-            chart_title = tk.Label(chart_frame, text="Güvenlik Durumu Geçmişi", 
-                                font=("Arial", 14, "bold"), 
-                                bg=self.card_color, fg=self.text_color)
-            chart_title.pack(anchor=tk.W, padx=20, pady=(15, 5))
-            
-            chart_subtitle = tk.Label(chart_frame, 
-                                   text=f"Son {len(history)} tarama sonucu", 
-                                   font=("Arial", 10), 
-                                   bg=self.card_color, fg="#B3B3B3")
-            chart_subtitle.pack(anchor=tk.W, padx=20, pady=(0, 10))
-            
-            # Animasyonlu grafik
-            chart = AnimatedChart(chart_frame, width=600, height=200, 
-                               data=chart_data, 
-                               bg_color=self.card_color, 
-                               line_color=self.accent_color)
-            chart.pack(padx=20, pady=(0, 20), fill=tk.X)
-            
-            # Özet istatistikler
-            summary_frame = tk.Frame(self.content_area, bg=self.bg_color)
-            summary_frame.pack(fill=tk.X, padx=30, pady=(0, 15))
-            
-            # Grid yapısı
-            for i in range(3):
-                summary_frame.columnconfigure(i, weight=1)
-            
-            # Son taramalar
-            last_scans_card = RoundedFrame(summary_frame, bg_color=self.card_color, corner_radius=10)
-            last_scans_card.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
-            
-            # Güvenli / tehlikeli oranları
-            ratio_card = RoundedFrame(summary_frame, bg_color=self.card_color, corner_radius=10)
-            ratio_card.grid(row=0, column=1, padx=10, pady=10, sticky="nsew")
-            
-            # Son 3 güvenli tarama
-            ratio_frame = tk.Frame(ratio_card, bg=self.card_color)
-            ratio_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-            
-            ratio_title = tk.Label(ratio_frame, text="Güvenlik Oranı", 
-                                font=("Arial", 14, "bold"), 
-                                bg=self.card_color, fg=self.text_color)
-            ratio_title.pack(anchor=tk.W, pady=(0, 15))
-            
-            # Dairesel ilerleme
-            total_scans = safe_count + threat_count
-            if total_scans > 0:
-                safe_ratio = (safe_count / total_scans) * 100
-            else:
-                safe_ratio = 0
-            
-            ratio_progress = CircularProgressbar(
-                ratio_frame, 
-                width=100, 
-                height=100, 
-                bg_color=self.card_color, 
-                fg_color=self.accent_color
-            )
-            ratio_progress.pack(pady=10)
-            ratio_progress.update_progress(safe_ratio)
-            
-            ratio_text = tk.Label(ratio_frame, 
-                               text=f"Güvenli: {safe_count} / Tehlikeli: {threat_count}", 
-                               font=("Arial", 10), 
-                               bg=self.card_color, fg="#B3B3B3")
-            ratio_text.pack(pady=(5, 0))
-            
-            # Son taramalar listesi
-            scans_frame = tk.Frame(last_scans_card, bg=self.card_color)
-            scans_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-            
-            scans_title = tk.Label(scans_frame, text="Son Taramalar", 
-                                font=("Arial", 14, "bold"), 
-                                bg=self.card_color, fg=self.text_color)
-            scans_title.pack(anchor=tk.W, pady=(0, 15))
-            
-            # Son 5 taramayı göster
-            recent_history = history[-5:] if len(history) > 5 else history
-            recent_history.reverse()  # En son yapılan tarama en üstte
-            
-            for entry in recent_history:
-                is_safe = entry.get("is_safe", True)
-                date = entry.get("date", "Bilinmeyen tarih")
-                
-                scan_row = tk.Frame(scans_frame, bg=self.card_color)
-                scan_row.pack(fill=tk.X, pady=5)
-                
-                icon = "✅" if is_safe else "⚠️"
-                color = self.accent_color if is_safe else self.warning_color
-                
-                scan_icon = tk.Label(scan_row, text=icon, font=("Arial", 14), 
-                                   bg=self.card_color, fg=color)
-                scan_icon.pack(side=tk.LEFT, padx=(0, 10))
-                
-                scan_info = tk.Label(scan_row, text=f"Tarama: {date}", 
-                                  font=("Arial", 10), 
-                                  bg=self.card_color, fg=self.text_color)
-                scan_info.pack(side=tk.LEFT)
-                
-                scan_status = tk.Label(scan_row, 
-                                    text="Güvenli" if is_safe else "Tehlikeli", 
-                                    font=("Arial", 10), 
-                                    bg=self.card_color, fg=color)
-                scan_status.pack(side=tk.RIGHT)
-                
-                # Satırın hover efekti
-                scan_row.bind("<Enter>", 
-                           lambda e, f=scan_row: f.configure(background=self.card_hover))
-                scan_row.bind("<Leave>", 
-                           lambda e, f=scan_row: f.configure(background=self.card_color))
-                
-                for child in scan_row.winfo_children():
-                    child.bind("<Enter>", 
-                            lambda e, f=scan_row: f.configure(background=self.card_hover))
-                    child.bind("<Leave>", 
-                            lambda e, f=scan_row: f.configure(background=self.card_color))
-        else:
-            # Henüz uygulama geçmişi yok
-            info_frame = RoundedFrame(self.content_area, bg_color=self.card_color, corner_radius=10)
-            info_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(10, 30))
-            
-            no_data_frame = tk.Frame(info_frame, bg=self.card_color)
-            no_data_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER, relwidth=0.8, relheight=0.8)
-            
-            info_icon = tk.Label(no_data_frame, text="🕒", font=("Arial", 48), 
-                              bg=self.card_color, fg=self.text_color)
-            info_icon.pack(pady=(0, 10))
-            
-            info_title = tk.Label(no_data_frame, text="Geçmiş Bulunamadı", 
-                               font=("Arial", 16, "bold"), 
-                               bg=self.card_color, fg=self.text_color)
-            info_title.pack(pady=(0, 5))
-            
-            info_text = tk.Label(no_data_frame, 
-                              text="Tarama geçmişi henüz oluşturulmadı. Bir tarama yaptığınızda sonuçlar burada görüntülenecektir.",
-                              wraplength=500, justify=tk.CENTER, 
-                              font=("Arial", 12), 
-                              bg=self.card_color, fg="#B3B3B3")
-            info_text.pack(pady=(0, 20))
-            
-            # Tarama butonu
-            scan_btn = SpotifyButton(no_data_frame, text="Tarama Yap", command=self.load_scan_content,
-                                  width=150, height=40, bg_color=self.accent_color)
-            scan_btn.pack()
-    
-    def load_settings_content(self):
-        """Ayarlar ekranını yükler"""
-        self.clear_content()
-        
-        # Başlık
-        header = tk.Frame(self.content_area, bg=self.bg_color)
-        header.pack(fill=tk.X, padx=30, pady=(30, 20))
-        
-        title = tk.Label(header, text="Ayarlar", 
-                       font=("Arial", 24, "bold"), 
-                       bg=self.bg_color, fg=self.text_color)
-        title.pack(anchor=tk.W)
-        
-        subtitle = tk.Label(header, 
-                         text="Uygulama ayarlarını özelleştirin", 
-                         font=("Arial", 12), 
-                         bg=self.bg_color, fg="#B3B3B3")
-        subtitle.pack(anchor=tk.W, pady=(5, 0))
-        
-        # Ayarlar kartı
-        settings_card = RoundedFrame(self.content_area, bg_color=self.card_color, corner_radius=10)
-        settings_card.pack(fill=tk.BOTH, expand=True, padx=30, pady=(10, 30))
-        
-        # Ayarlar içeriği
-        settings_content = tk.Frame(settings_card, bg=self.card_color)
-        settings_content.place(relx=0.5, rely=0.1, anchor=tk.N, relwidth=0.9, relheight=0.8)
-        
-        # Genel Ayarlar başlığı
-        general_title = tk.Label(settings_content, text="Genel Ayarlar", 
-                              font=("Arial", 16, "bold"), 
-                              bg=self.card_color, fg=self.text_color)
-        general_title.pack(anchor=tk.W, pady=(20, 10))
-        
-        # Periyodik tarama ayarı için frame
-        periodic_setting_frame = RoundedFrame(settings_content, bg_color=self.card_hover, corner_radius=8)
-        periodic_setting_frame.pack(fill=tk.X, pady=10)
-        
-        periodic_frame = tk.Frame(periodic_setting_frame, bg=self.card_hover)
-        periodic_frame.pack(fill=tk.X, padx=15, pady=15)
-        
-        # Periyodik tarama seçeneği
-        class AnimatedCheckbox(tk.Canvas):
-            def __init__(self, parent, variable, **kwargs):
-                super().__init__(parent, width=24, height=24, bg=parent["bg"], 
-                               highlightthickness=0, **kwargs)
-                
-                self.variable = variable
-                self.animation_id = None
-                
-                # Çember ve işaret çiz
-                self.outer_circle = self.create_oval(2, 2, 22, 22, outline="#555555", width=2, fill="")
-                self.inner_circle = self.create_oval(6, 6, 18, 18, outline="", fill="")
-                
-                # İşaretli durumu yansıt
-                self._update_state()
-                
-                # Değişken değişimini izle
-                self.variable.trace_add("write", lambda *args: self._update_state())
-                
-                # Tıklama işleyici
-                self.bind("<Button-1>", self._toggle)
-            
-            def _toggle(self, event):
-                """Checkbox durumunu tersine çevir"""
-                self.variable.set(not self.variable.get())
-            
-            def _update_state(self):
-                """Checkbox durumunu güncelle"""
-                if self.animation_id:
-                    self.after_cancel(self.animation_id)
-                
-                is_checked = self.variable.get()
-                start_radius = 0 if is_checked else 6
-                end_radius = 6 if is_checked else 0
-                start_color = "#121212" if not is_checked else "#1DB954"
-                end_color = "#1DB954" if is_checked else "#121212"
-                
-                self._animate_check(start_radius, end_radius, start_color, end_color)
-            
-            def _animate_check(self, start_radius, end_radius, start_color, end_color, step=0, steps=10):
-                """İşaretleme animasyonu"""
-                if step <= steps:
-                    # Lineer interpolasyon
-                    t = step / steps
-                    
-                    # Kademeli animasyon efekti 
-                    t_eased = t * t * (3 - 2 * t)  # Smooth step interpolation
-                    
-                    # Renk ayarla
-                    r1, g1, b1 = int(start_color[1:3], 16), int(start_color[3:5], 16), int(start_color[5:7], 16)
-                    r2, g2, b2 = int(end_color[1:3], 16), int(end_color[3:5], 16), int(end_color[5:7], 16)
-                    
-                    r = r1 + (r2 - r1) * t_eased
-                    g = g1 + (g2 - g1) * t_eased
-                    b = b1 + (b2 - b1) * t_eased
-                    
-                    color = f'#{int(r):02x}{int(g):02x}{int(b):02x}'
-                    
-                    # İç daire boyutunu güncelle
-                    radius = start_radius + (end_radius - start_radius) * t_eased
-                    
-                    self.itemconfig(self.inner_circle, fill=color)
-                    self.coords(self.inner_circle, 
-                            12-radius, 12-radius, 
-                            12+radius, 12+radius)
-                    
-                    # Bir sonraki adım
-                    self.animation_id = self.after(20, lambda: self._animate_check(
-                        start_radius, end_radius, start_color, end_color, step+1, steps))
-                else:
-                    self.animation_id = None
-        
-        # Özel checkbox ve etiket
-        checkbox_frame = tk.Frame(periodic_frame, bg=self.card_hover)
-        checkbox_frame.pack(anchor=tk.W)
-        
-        checkbox = AnimatedCheckbox(checkbox_frame, self.periodic_var)
-        checkbox.pack(side=tk.LEFT, padx=(0, 10))
-        
-        checkbox_label = tk.Label(checkbox_frame, text="Periyodik tarama", 
-                               font=("Arial", 12), 
-                               bg=self.card_hover, fg=self.text_color)
-        checkbox_label.pack(side=tk.LEFT)
-        
-        # Etiket de tıklanabilir olsun
-        checkbox_label.bind("<Button-1>", lambda e: self.periodic_var.set(not self.periodic_var.get()))
-        
-        # Periyodik tarama ayarları
-        period_frame = tk.Frame(periodic_frame, bg=self.card_hover)
-        period_frame.pack(fill=tk.X, pady=(15, 0))
-        
-        period_label = tk.Label(period_frame, text="Tarama sıklığı:", 
-                             font=("Arial", 12),
-                             bg=self.card_hover, fg=self.text_color)
-        period_label.pack(side=tk.LEFT, padx=(20, 10))
-        
-        # Özel stil için ttk kullanıyoruz
-        style = ttk.Style()
-        style.theme_use('default')
-        style.configure("Spotify.TCombobox", 
-                      padding=5,
-                      background=self.accent_color)
-        
-        # Saat değerleri için slider
-        period_values = ["1", "2", "4", "6", "8", "12", "24", "48", "72"]
-        
-        # Spotify stili combobox
-        class SpotifyCombobox(tk.Frame):
-            def __init__(self, parent, values, current_value, bg_color="#282828", **kwargs):
-                super().__init__(parent, bg=bg_color, **kwargs)
-                
-                self.values = values
-                self.current_value = tk.StringVar(value=current_value)
-                self.dropdown_visible = False
-                
-                # Ana buton
-                self.button = tk.Frame(self, bg=bg_color, padx=10, pady=5)
-                self.button.pack(fill=tk.X)
-                
-                # Buton metni
-                self.button_text = tk.Label(self.button, textvariable=self.current_value, 
-                                         font=("Arial", 12), 
-                                         bg=bg_color, fg="#FFFFFF")
-                self.button_text.pack(side=tk.LEFT)
-                
-                # Ok işareti
-                self.arrow = tk.Label(self.button, text="▼", font=("Arial", 8), 
-                                   bg=bg_color, fg="#AAAAAA")
-                self.arrow.pack(side=tk.RIGHT, padx=(5, 0))
-                
-                # Açılır menü
-                self.dropdown = tk.Frame(self, bg="#333333", padx=2, pady=2)
-                
-                # Değerler listesi
-                for value in values:
-                    item = tk.Label(self.dropdown, text=value, font=("Arial", 12), 
-                                 bg="#333333", fg="#FFFFFF", 
-                                 padx=10, pady=5)
-                    item.pack(fill=tk.X)
-                    
-                    # Hover efekti
-                    item.bind("<Enter>", lambda e, i=item: i.config(bg=self.master["bg"]))
-                    item.bind("<Leave>", lambda e, i=item: i.config(bg="#333333"))
-                    
-                    # Tıklama
-                    item.bind("<Button-1>", lambda e, v=value: self._select_value(v))
-                
-                # Açılır menüyü gösterip gizle
-                self.button.bind("<Button-1>", self._toggle_dropdown)
-                
-                # Buton hover efekti
-                self.button.bind("<Enter>", lambda e: self.button.config(bg="#383838"))
-                self.button.bind("<Leave>", lambda e: self.button.config(bg=bg_color))
-                for child in self.button.winfo_children():
-                    child.bind("<Enter>", lambda e: self.button.config(bg="#383838"))
-                    child.bind("<Leave>", lambda e: self.button.config(bg=bg_color))
-            
-            def _toggle_dropdown(self, event=None):
-                """Açılır menüyü göster/gizle"""
-                if self.dropdown_visible:
-                    self.dropdown.pack_forget()
-                    self.arrow.config(text="▼")
-                else:
-                    self.dropdown.pack(fill=tk.X)
-                    self.arrow.config(text="▲")
-                
-                self.dropdown_visible = not self.dropdown_visible
-            
-            def _select_value(self, value):
-                """Değer seçildiğinde"""
-                self.current_value.set(value)
-                self._toggle_dropdown()
-            
-            def get(self):
-                """Seçilen değeri döndürür"""
-                return self.current_value.get()
-        
-        # Saat seçimi için combobox
-        combo = SpotifyCombobox(
-            period_frame, 
-            values=period_values, 
-            current_value=str(self.period_hours.get()),
-            bg_color=self.card_hover
-        )
-        combo.pack(side=tk.LEFT, padx=(0, 10))
-        
-        hours_label = tk.Label(period_frame, text="saat", 
-                            font=("Arial", 12),
-                            bg=self.card_hover, fg=self.text_color)
-        hours_label.pack(side=tk.LEFT, padx=(5, 0))
-        
-        # Sistem başlangıcında çalıştırma
-        startup_frame = RoundedFrame(settings_content, bg_color=self.card_hover, corner_radius=8)
-        startup_frame.pack(fill=tk.X, pady=10)                # İçeriği soluklaştır
-                def fade_out(alpha=1.0, step=0, steps=5):
-                    if step < steps:
-                        new_alpha = alpha - (alpha / steps)
-                        self.status_icon.configure(fg=f"#{int(255*new_alpha):02x}{int(255*new_alpha):02x}{int(255*new_alpha):02x}")
-                        self.status_title.configure(fg=f"#{int(255*new_alpha):02x}{int(255*new_alpha):02x}{int(255*new_alpha):02x}")
-                        self.status_text.configure(fg=f"#{int(255*new_alpha):02x}{int(255*new_alpha):02x}{int(255*new_alpha):02x}")
-                        self.root.after(50, lambda: fade_out(new_alpha, step+1, steps))
-                    else:
-                        # İçeriği güncelle
-                        self.status_icon.configure(text=icon, fg=self.text_color)
-                        self.status_title.configure(text=title, fg=title_color)
-                        self.status_text.configure(text=message, fg="#B3B3B3")
-                        
-                        # Kartın rengini değiştir
-                        self.result_card.bg_color = card_color
-                        self.result_card.canvas.configure(background=card_color)
-                        
-                        # Yeni içeriği kademeli göster
-                        fade_in()
-                
-                # İçeriği kademeli göster
-                def fade_in(alpha=0.0, step=0, steps=10):
-                    if step < steps:
-                        new_alpha = alpha + ((1.0 - alpha) / steps)
-                        if step < steps / 2:  # İkonu önce göster
-                            self.status_icon.configure(fg=f"#{int(255*new_alpha):02x}{int(255*new_alpha):02x}{int(255*new_alpha):02x}")
-                        
-                        if step > steps / 4:  # Sonra başlık
-                            self.status_title.configure(fg=title_color)
-                        
-                        if step > steps / 2:  # En son mesaj
-                            self.status_text.configure(fg=f"#{int(179*new_alpha):02x}{int(179*new_alpha):02x}{int(179*new_alpha):02x}")
-                        
-                        self.root.after(50, lambda: fade_in(new_alpha, step+1, steps))
-                
-                # Animasyonu başlat
-                fade_out()
     
     def show_warning(self, suspicious_entries):
         """Şüpheli durumlar için uyarı penceresi gösterir"""
@@ -2502,6 +1909,9 @@ class ARP_GUI_Spotify:
         
         # Uyarı ikonunu anime et - yanıp sönme
         def blink_icon(state=True):
+            if not self.warning_window.winfo_exists() or not icon_label.winfo_exists():
+                return
+                
             if state:
                 icon_label.configure(fg=self.warning_color)
             else:
@@ -2575,8 +1985,9 @@ class ARP_GUI_Spotify:
                 
                 # Kademeli gösterme
                 def show_threat(frame, index):
-                    delay = index * 300  # Her tehdit arasında 300ms bekle
-                    self.warning_window.after(delay, frame.pack, {'pady': 2, 'fill': tk.X})
+                    if frame.winfo_exists() and self.warning_window.winfo_exists():
+                        delay = index * 300  # Her tehdit arasında 300ms bekle
+                        self.warning_window.after(delay, lambda: frame.pack(fill=tk.X, pady=2) if frame.winfo_exists() else None)
                 
                 # Gösterme çağrısı
                 show_threat(threat_frame, i)
@@ -2619,8 +2030,9 @@ class ARP_GUI_Spotify:
             
             # Kademeli gösterme
             def show_action(frame, index):
-                delay = 1000 + (index * 300)  # Tehditlerden sonra göster
-                self.warning_window.after(delay, frame.pack, {'fill': tk.X, 'pady': 2})
+                if frame.winfo_exists() and self.warning_window.winfo_exists():
+                    delay = 1000 + (index * 300)  # Tehditlerden sonra göster
+                    self.warning_window.after(delay, lambda: frame.pack(fill=tk.X, pady=2) if frame.winfo_exists() else None)
             
             # Gösterme çağrısı
             show_action(action_frame, i)
@@ -2631,7 +2043,7 @@ class ARP_GUI_Spotify:
         
         # Butonu başlangıçta gizle, animasyonla göster
         close_btn.pack_forget()
-        self.warning_window.after(2500, lambda: close_btn.pack(side=tk.RIGHT, pady=10))
+        self.warning_window.after(2500, lambda: close_btn.pack(side=tk.RIGHT, pady=10) if self.warning_window.winfo_exists() and close_btn.winfo_exists() else None)
         
         # Pencereyi ortala
         self.warning_window.update_idletasks()
@@ -2788,11 +2200,24 @@ class ARP_GUI_Spotify:
             
             canvas.bind("<Configure>", on_canvas_configure)
             
-            # Fare tekerleği bağlama
+            # Fare tekerleği bağlama - platformlar arası uyumluluk
             def on_mousewheel(event):
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                if platform.system() == 'Windows':
+                    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+                elif platform.system() == 'Darwin':  # macOS
+                    canvas.yview_scroll(int(-1 * event.delta), "units")
+                else:  # Linux ve diğerleri
+                    if event.num == 4:  # Yukarı kaydırma
+                        canvas.yview_scroll(-1, "units")
+                    elif event.num == 5:  # Aşağı kaydırma
+                        canvas.yview_scroll(1, "units")
             
-            canvas.bind_all("<MouseWheel>", on_mousewheel)
+            # Platformlar arası uyumlu fare tekerleği desteği
+            if platform.system() == 'Windows' or platform.system() == 'Darwin':
+                canvas.bind_all("<MouseWheel>", on_mousewheel)
+            else:
+                canvas.bind_all("<Button-4>", on_mousewheel)
+                canvas.bind_all("<Button-5>", on_mousewheel)
             
             # Geçmiş kartlarını oluştur
             for i, item in enumerate(reversed(history_data)):  # En yeniden en eskiye sırala
@@ -2843,8 +2268,8 @@ class ARP_GUI_Spotify:
                 details_btn.pack(side=tk.RIGHT)
                 
                 # Detay gösterme işlevi
-                details_btn.bind("<Button-1>", lambda e, result=item["result"]: 
-                              self._show_scan_details(result, date_str, is_safe))
+                details_btn.bind("<Button-1>", lambda e, result=item["result"], d=date_str, s=is_safe: 
+                              self._show_scan_details(result, d, s))
                 details_btn.bind("<Enter>", 
                               lambda e, btn=details_btn: btn.configure(fg="#DDDDDD"))
                 details_btn.bind("<Leave>", 
@@ -2852,7 +2277,7 @@ class ARP_GUI_Spotify:
                 
                 # Animasyonlu görünüm
                 scan_frame.pack_forget()  # İlk başta gizle
-                self.root.after(i * 100, scan_frame.pack, {'fill': tk.X, 'pady': 5})
+                self.root.after(i * 100, lambda f=scan_frame: f.pack(fill=tk.X, pady=5) if f.winfo_exists() else None)
     
     def _show_scan_details(self, result_text, date_str, is_safe):
         """Tarama detaylarını gösterir"""
@@ -3156,20 +2581,20 @@ class ARP_GUI_Spotify:
         step_y = (y_start - y_end) / steps
         
         def animate_in(step=0):
-            if step <= steps:
+            if step <= steps and notification.winfo_exists():
                 y = y_start - (step * step_y)
                 notification.geometry(f"{width}x{height}+{x}+{int(y)}")
                 notification.after(20, lambda: animate_in(step + 1))
-            else:
+            elif notification.winfo_exists():
                 # Belirli süre sonra kapat
                 notification.after(duration, lambda: animate_out())
         
         def animate_out(step=0):
-            if step <= steps:
+            if step <= steps and notification.winfo_exists():
                 y = y_end + (step * step_y)
                 notification.geometry(f"{width}x{height}+{x}+{int(y)}")
                 notification.after(20, lambda: animate_out(step + 1))
-            else:
+            elif notification.winfo_exists():
                 notification.destroy()
         
         # Animasyonu başlat
@@ -3232,6 +2657,12 @@ class ARP_GUI_Spotify:
             # Taramanın tamamlanmasını bekle
             time.sleep(5)
     
+    def stop_scan(self):
+        """Periyodik taramayı durdurur"""
+        if self.periodic_running:
+            self.periodic_running = False
+            self.status_var.set("Periyodik tarama durduruldu")
+            messagebox.showinfo("Bilgi", "Periyodik tarama durduruldu.")
 
 # Program çalıştırma
 if __name__ == "__main__":
