@@ -139,36 +139,20 @@ def detect_arp_spoofing(arp_table):
     """
     suspicious_entries = []
     mac_to_ips = defaultdict(list)
-    info_entries = []  # Bilgi girişleri için ayrı bir liste
     
     # Her MAC adresine bağlı IP'leri topla
     for entry in arp_table:
         mac = entry["mac"].lower()  # Büyük/küçük harf duyarlılığını kaldır
         ip = entry["ip"]
         
-        # Broadcast veya multicast MAC adreslerini özel işle
+        # Broadcast MAC adresini atla (normal bir ağ özelliği, saldırı değil)
         if mac == "ff:ff:ff:ff:ff:ff":
-            info_entries.append({
-                "type": "info_broadcast",
-                "ip": entry["ip"],
-                "mac": mac,
-                "severity": "info",  # Önem derecesi: bilgi
-                "message": f"📌 Bilgi: Broadcast MAC adresi: IP={entry['ip']}, MAC={mac}"
-            })
             continue
             
-        # Multicast MAC adreslerini özel işle
+        # Multicast MAC adresini atla (normal bir ağ özelliği, saldırı değil)
         if mac.startswith(("01:", "03:", "05:", "07:", "09:", "0b:", "0d:", "0f:")):
-            info_entries.append({
-                "type": "info_multicast",
-                "ip": entry["ip"],
-                "mac": mac,
-                "severity": "info",  # Önem derecesi: bilgi
-                "message": f"📌 Bilgi: Multicast MAC adresi: IP={entry['ip']}, MAC={mac}"
-            })
             continue
             
-        # Normal MAC adresleri için IP topla
         mac_to_ips[mac].append(ip)
     
     # Bir MAC'in birden fazla IP'si varsa (1'den çok cihaz olabilir)
@@ -178,7 +162,6 @@ def detect_arp_spoofing(arp_table):
                 "type": "multiple_ips",
                 "mac": mac,
                 "ips": ips,
-                "severity": "warning",  # Önem derecesi: uyarı
                 "message": f"⚠️ Şüpheli: {mac} MAC adresine sahip {len(ips)} farklı IP adresi var: {', '.join(ips)}"
             })
     
@@ -192,8 +175,113 @@ def detect_arp_spoofing(arp_table):
                     "type": "gateway_multiple_macs",
                     "ip": gateway["ip"],
                     "macs": [entry["mac"] for entry in gateway_entries],
-                    "severity": "danger",  # Önem derecesi: tehlike
                     "message": f"❌ TEHLİKE: Ağ geçidi {gateway['ip']} için birden fazla MAC adresi var!"
+                })
+    
+    # Bilgi amaçlı özel MAC adreslerini ekle (saldırı değil)
+    info_entries = []
+    for entry in arp_table:
+        mac = entry["mac"].lower()
+        # Broadcast MAC (ff:ff:ff:ff:ff:ff)
+        if mac == "ff:ff:ff:ff:ff:ff":
+            info_entries.append({
+                "type": "info_broadcast",
+                "ip": entry["ip"],
+                "mac": mac,
+                "message": f"📌 Bilgi: Broadcast MAC adresi: IP={entry['ip']}, MAC={mac}"
+            })
+        # Multicast MAC (ilk byte'ın en düşük biti 1)
+        elif mac.startswith(("01:", "03:", "05:", "07:", "09:", "0b:", "0d:", "0f:")):
+            info_entries.append({
+                "type": "info_multicast",
+                "ip": entry["ip"],
+                "mac": mac,
+                "message": f"📌 Bilgi: Multicast MAC adresi: IP={entry['ip']}, MAC={mac}"
+            })
+    
+    # Bilgi amaçlı girdileri listeye ekle (şüpheli durumlar listesinin sonuna)
+    for entry in info_entries:
+        suspicious_entries.append(entry)
+    
+    return suspicious_entries
+
+# Ana ARP tarama fonksiyonu
+def arp_kontrol_et():
+    """
+    ARP tablosunu kontrol ederek olası ARP spoofing saldırılarını tespit eder.
+    Bu fonksiyon GUI tarafından çağrılır.
+    """
+    print("=" * 60)
+    print("🔍 ARP Tablosu Taraması Başlatılıyor...")
+    print("=" * 60)
+    
+    # ARP tablosunu al
+    arp_table = get_arp_table()
+    
+    if not arp_table:
+        print("❌ ARP tablosu alınamadı veya boş.")
+        return
+    
+    # Varsayılan ağ geçidini bul
+    gateway = get_default_gateway()
+    
+    print(f"🌐 Varsayılan Ağ Geçidi: {gateway['ip']} (MAC: {gateway['mac']})")
+    print("=" * 60)
+    
+    # ARP tablosunu göster
+    print("\n📋 ARP Tablosu:")
+    print("-" * 60)
+    print(f"{'IP Adresi':<15} {'MAC Adresi':<20} {'Arayüz':<10}")
+    print("-" * 60)
+    for entry in arp_table:
+        print(f"{entry['ip']:<15} {entry['mac']:<20} {entry['interface']:<10}")
+    
+    # ARP spoofing tespiti
+    print("\n🔍 ARP Spoofing Analizi:")
+    print("-" * 60)
+    
+    suspicious_entries = detect_arp_spoofing(arp_table)
+    
+    if suspicious_entries:
+        for entry in suspicious_entries:
+            print(entry["message"])
+    else:
+        print("✅ Herhangi bir şüpheli durum tespit edilmedi.")
+    
+    # Özet
+    print("\n📊 Analiz Özeti:")
+    print("-" * 60)
+    print(f"Toplam kayıt sayısı: {len(arp_table)}")
+    # Bilgi girişleri olmayan şüpheli kayıtların sayısını hesapla
+    gercek_supheli_sayisi = len([entry for entry in suspicious_entries 
+                                 if entry["type"] not in ["info_broadcast", "info_multicast"]])
+    print(f"Şüpheli kayıt sayısı: {gercek_supheli_sayisi}")
+    
+    if gercek_supheli_sayisi > 0:
+        şüpheli_tiplerini_say = defaultdict(int)
+        # Sadece gerçek şüpheli durumları say
+        for entry in suspicious_entries:
+            if entry["type"] not in ["info_broadcast", "info_multicast"]:
+                şüpheli_tiplerini_say[entry["type"]] += 1
+        
+        for tip, sayı in şüpheli_tiplerini_say.items():
+            tip_açıklamaları = {
+                "multiple_ips": "Birden fazla IP'ye sahip MAC adresleri",
+                "gateway_multiple_macs": "Birden fazla MAC'e sahip ağ geçidi",
+                "broadcast_mac": "Broadcast MAC adresleri",
+                "multicast_mac": "Multicast MAC adresleri"
+            }
+            açıklama = tip_açıklamaları.get(tip, tip)
+            print(f"- {açıklama}: {sayı}")
+        
+        print("\n⚠️ Şüpheli durumlar tespit edildi. Ağınızda ARP spoofing saldırısı olabilir.")
+        print("⚠️ Özellikle birden fazla MAC adresine sahip bir ağ geçidi varsa, bu ciddi bir tehlike işaretidir.")
+    else:
+        print("\n✅ Ağınız şu an için güvenli görünüyor.")
+    
+    print("\n" + "=" * 60)
+    print("🏁 Tarama Tamamlandı")
+    print("=" * 60)
                 })
     
     # Bilgi amaçlı girdileri listeye ekle
