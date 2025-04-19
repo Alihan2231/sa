@@ -210,11 +210,15 @@ def detect_arp_spoofing(arp_table):
                 "message": f"📌 Bilgi: Multicast MAC adresi: IP={entry['ip']}, MAC={mac}"
             })
     
-    # Bilgi amaçlı girdileri listeye ekle (şüpheli durumlar listesinin sonuna)
-    for entry in info_entries:
-        suspicious_entries.append(entry)
-    
-    return suspicious_entries
+    # Şüpheli sayısını hesapla (bilgi girişlerini dahil etmeden)
+suspicious_count = len([entry for entry in suspicious_entries if entry["type"] not in ["info_broadcast", "info_multicast"]])
+
+# Sonuç metninde kullanılacak özet bilgisi
+print(f"Şüpheli kayıt sayısı: {suspicious_count}")
+
+# Bilgi amaçlı girdileri listeye ekle (şüpheli durumlar listesinin sonuna)
+for entry in info_entries:
+    suspicious_entries.append(entry)
 
 # Ana ARP tarama fonksiyonu
 def arp_kontrol_et():
