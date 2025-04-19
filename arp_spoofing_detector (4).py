@@ -139,20 +139,36 @@ def detect_arp_spoofing(arp_table):
     """
     suspicious_entries = []
     mac_to_ips = defaultdict(list)
+    info_entries = []  # Bilgi girişleri için ayrı bir liste
     
     # Her MAC adresine bağlı IP'leri topla
     for entry in arp_table:
         mac = entry["mac"].lower()  # Büyük/küçük harf duyarlılığını kaldır
         ip = entry["ip"]
         
-        # Broadcast MAC adresini atla (normal bir ağ özelliği, saldırı değil)
+        # Broadcast veya multicast MAC adreslerini özel işle
         if mac == "ff:ff:ff:ff:ff:ff":
+            info_entries.append({
+                "type": "info_broadcast",
+                "ip": entry["ip"],
+                "mac": mac,
+                "severity": "info",  # Önem derecesi: bilgi
+                "message": f"📌 Bilgi: Broadcast MAC adresi: IP={entry['ip']}, MAC={mac}"
+            })
             continue
             
-        # Multicast MAC adresini atla (normal bir ağ özelliği, saldırı değil)
+        # Multicast MAC adreslerini özel işle
         if mac.startswith(("01:", "03:", "05:", "07:", "09:", "0b:", "0d:", "0f:")):
+            info_entries.append({
+                "type": "info_multicast",
+                "ip": entry["ip"],
+                "mac": mac,
+                "severity": "info",  # Önem derecesi: bilgi
+                "message": f"📌 Bilgi: Multicast MAC adresi: IP={entry['ip']}, MAC={mac}"
+            })
             continue
             
+        # Normal MAC adresleri için IP topla
         mac_to_ips[mac].append(ip)
     
     # Bir MAC'in birden fazla IP'si varsa (1'den çok cihaz olabilir)
@@ -162,6 +178,7 @@ def detect_arp_spoofing(arp_table):
                 "type": "multiple_ips",
                 "mac": mac,
                 "ips": ips,
+                "severity": "warning",  # Önem derecesi: uyarı
                 "message": f"⚠️ Şüpheli: {mac} MAC adresine sahip {len(ips)} farklı IP adresi var: {', '.join(ips)}"
             })
     
@@ -175,20 +192,14 @@ def detect_arp_spoofing(arp_table):
                     "type": "gateway_multiple_macs",
                     "ip": gateway["ip"],
                     "macs": [entry["mac"] for entry in gateway_entries],
+                    "severity": "danger",  # Önem derecesi: tehlike
                     "message": f"❌ TEHLİKE: Ağ geçidi {gateway['ip']} için birden fazla MAC adresi var!"
                 })
     
-    # Bilgi amaçlı özel MAC adreslerini ekle (saldırı değil)
-    info_entries = []
-    for entry in arp_table:
-        mac = entry["mac"].lower()
-        # Broadcast MAC (ff:ff:ff:ff:ff:ff)
-        if mac == "ff:ff:ff:ff:ff:ff":
-            info_entries.append({
-                "type": "info_broadcast",
-                "ip": entry["ip"],
-                "mac": mac,
-                "message": f"📌 Bilgi: Broadcast MAC adresi: IP={entry['ip']}, MAC={mac}"
+    # Bilgi amaçlı girdileri listeye ekle
+    result = suspicious_entries + info_entries
+    
+    return result
             })
         # Multicast MAC (ilk byte'ın en düşük biti 1)
         elif mac.startswith(("01:", "03:", "05:", "07:", "09:", "0b:", "0d:", "0f:")):
