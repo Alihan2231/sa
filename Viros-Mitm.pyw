@@ -2,13 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-ARP Spoofing Tespit Aracı - Tek Dosya Sürümü
+ARP Spoofing Tespit Aracı - Spotify Tema
 Bu araç, ağda olası ARP spoofing saldırılarını tespit etmek için gerekli tüm fonksiyonları ve 
 tkinter tabanlı bir grafik arayüz içerir.
 
 Geliştirici: Replit Kullanıcısı
-Versiyon: 1.0
-Tarih: 2025-04-18
+Versiyon: 2.0
+Tarih: 2025-04-19
 """
 
 # --------- Gerekli modülleri içe aktarma ---------
@@ -20,7 +20,7 @@ import subprocess
 import re
 import os
 import tkinter as tk
-from tkinter import scrolledtext, messagebox, ttk, Toplevel, PhotoImage
+from tkinter import scrolledtext, messagebox, ttk, Toplevel, PhotoImage, Canvas, Frame
 import threading
 from collections import defaultdict
 import io
@@ -55,9 +55,16 @@ def get_arp_table():
     arp_entries = []
     
     try:
+        # Windows için cmd ekranını gizle
+        startupinfo = None
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0  # SW_HIDE
+            
         # Platforma göre uygun komutu belirle
         if os.name == 'nt':  # Windows
-            output = subprocess.check_output(['arp', '-a'], text=True)
+            output = subprocess.check_output(['arp', '-a'], text=True, startupinfo=startupinfo)
             # Windows ARP çıktısını ayrıştır
             pattern = r'(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f-]+)\s+(\w+)'
             for line in output.split('\n'):
@@ -98,8 +105,15 @@ def get_default_gateway():
         dict: Ağ geçidi IP ve MAC adresi
     """
     try:
+        # Windows için cmd ekranını gizle
+        startupinfo = None
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0  # SW_HIDE
+            
         if os.name == 'nt':  # Windows
-            output = subprocess.check_output(['ipconfig'], text=True)
+            output = subprocess.check_output(['ipconfig'], text=True, startupinfo=startupinfo)
             gateway_ip = None
             for line in output.split('\n'):
                 if 'Default Gateway' in line or 'Varsayılan Ağ Geçidi' in line:
@@ -288,157 +302,473 @@ def arp_kontrol_et():
 
 # ============= GRAFİK KULLANICI ARAYÜZÜ =============
 
-class ARP_GUI:
+# Yuvarlak köşeli çerçeve oluşturmak için özel widget
+class RoundedFrame(tk.Frame):
+    def __init__(self, parent, bg_color="#121212", corner_radius=10, **kwargs):
+        tk.Frame.__init__(self, parent, bg=bg_color, highlightthickness=0, **kwargs)
+        
+        self.corner_radius = corner_radius
+        self.bg_color = bg_color
+        
+        # Canvas oluştur ve frame'e ekle
+        self.canvas = tk.Canvas(self, bg=bg_color, highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True)
+        
+        # Dikdörtgen çiz
+        self.canvas.update()  # Canvas boyutunu almak için güncelleme yap
+        width = self.canvas.winfo_width()
+        height = self.canvas.winfo_height()
+        
+        # İlk kez boyut 1'den büyük olmalı
+        if width > 1 and height > 1:
+            self.rounded_rect(0, 0, width, height, self.corner_radius, self.bg_color)
+        
+        # Boyut değişiminde yeniden çiz
+        self.bind("<Configure>", self._on_resize)
+    
+    def _on_resize(self, event):
+        """Frame boyutu değiştiğinde yuvarlak köşeli dikdörtgeni yeniden çizer"""
+        width = event.width
+        height = event.height
+        self.canvas.delete("all")  # Tüm çizimleri temizle
+        self.rounded_rect(0, 0, width, height, self.corner_radius, self.bg_color)
+    
+    def rounded_rect(self, x1, y1, x2, y2, r, fill_color):
+        """Yuvarlak köşeli dikdörtgen çizer"""
+        points = [
+            x1+r, y1,
+            x2-r, y1,
+            x2, y1,
+            x2, y1+r,
+            x2, y2-r,
+            x2, y2,
+            x2-r, y2,
+            x1+r, y2,
+            x1, y2,
+            x1, y2-r,
+            x1, y1+r,
+            x1, y1
+        ]
+        
+        return self.canvas.create_polygon(points, fill=fill_color, smooth=True)
+
+# Spotify stili buton
+class SpotifyButton(tk.Canvas):
+    def __init__(self, parent, text="Button", command=None, width=120, height=40, 
+                 bg_color="#1DB954", text_color="#FFFFFF", hover_color="#1ED760",
+                 font=("Arial", 12), corner_radius=20, **kwargs):
+        tk.Canvas.__init__(self, parent, width=width, height=height, 
+                         bg=parent["bg"], highlightthickness=0, **kwargs)
+        
+        self.command = command
+        self.bg_color = bg_color
+        self.hover_color = hover_color
+        self.corner_radius = corner_radius
+        self.text = text
+        self.text_color = text_color
+        self.font = font
+        
+        # Buton çiz
+        self.button_shape = self.rounded_rect(0, 0, width, height, corner_radius, bg_color)
+        self.button_text = self.create_text(width/2, height/2, text=text, 
+                                         fill=text_color, font=font)
+        
+        # Mouse olayları
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+        
+    def rounded_rect(self, x1, y1, x2, y2, r, fill_color):
+        """Yuvarlak köşeli dikdörtgen çizer"""
+        points = [
+            x1+r, y1,
+            x2-r, y1,
+            x2, y1,
+            x2, y1+r,
+            x2, y2-r,
+            x2, y2,
+            x2-r, y2,
+            x1+r, y2,
+            x1, y2,
+            x1, y2-r,
+            x1, y1+r,
+            x1, y1
+        ]
+        
+        return self.create_polygon(points, fill=fill_color, smooth=True)
+    
+    def _on_enter(self, event):
+        """Mouse buton üzerine geldiğinde"""
+        self.itemconfig(self.button_shape, fill=self.hover_color)
+        
+    def _on_leave(self, event):
+        """Mouse butondan ayrıldığında"""
+        self.itemconfig(self.button_shape, fill=self.bg_color)
+        
+    def _on_click(self, event):
+        """Butona tıklandığında"""
+        if self.command:
+            self.command()
+
+# Ana uygulama sınıfı
+class ARP_GUI_Spotify:
     def __init__(self, root):
         self.root = root
-        self.root.title("ARP Spoofing Tespit Aracı")
-        self.root.geometry("600x500")
-        self.root.resizable(True, True)
+        self.root.title("ARP Guardian - Ağ Güvenliği")
+        self.root.geometry("900x600")
+        self.root.minsize(800, 500)
         
-        # Google benzeri renk şeması
-        self.bg_color = "#FFFFFF"       # Beyaz arka plan
-        self.text_color = "#202124"     # Koyu gri metin
-        self.button_color = "#4285F4"   # Google mavi
-        self.warning_color = "#EA4335"  # Google kırmızı
-        self.success_color = "#34A853"  # Google yeşil
-        self.accent_color = "#FBBC05"   # Google sarı
-        self.light_gray = "#F8F9FA"     # Açık gri arka plan
+        # Spotify renk şeması
+        self.bg_color = "#121212"       # Ana arka plan - koyu siyah
+        self.sidebar_color = "#000000"  # Kenar çubuğu - siyah
+        self.text_color = "#FFFFFF"     # Beyaz metin
+        self.accent_color = "#1DB954"   # Spotify yeşili
+        self.card_color = "#181818"     # Kart arka planı
+        self.card_hover = "#282828"     # Kart hover rengi
+        self.warning_color = "#F59B23"  # Uyarı rengi - turuncu
+        self.danger_color = "#E8265E"   # Tehlike rengi - kırmızı
         
-        # Ana çerçeveyi oluştur
-        main_frame = tk.Frame(root, bg=self.bg_color)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        # Uygulama ikonları (Emojilerle temsil ediliyor, daha sonra gerçek ikonlarla değiştirilebilir)
+        self.icons = {
+            "home": "🏠",
+            "scan": "🔍",
+            "history": "📜",
+            "settings": "⚙️",
+            "info": "ℹ️",
+            "warning": "⚠️",
+            "success": "✅",
+            "danger": "❌"
+        }
         
-        # Google tarzı başlık ve logo
-        title_frame = tk.Frame(main_frame, bg=self.bg_color)
-        title_frame.pack(pady=(0, 20))
+        # Ana container
+        self.root.configure(bg=self.bg_color)
         
-        # Logo label (simge yerine metin)
-        logo = tk.Label(title_frame, text="🛡️", font=("Arial", 48), bg=self.bg_color)
-        logo.pack()
+        # Layout
+        self.setup_layout()
         
-        # Başlık
-        title = tk.Label(title_frame, text="ARP Spoofing Tespit", 
-                        font=("Arial", 24, "bold"), bg=self.bg_color, fg=self.text_color)
-        title.pack(pady=(0, 5))
-        
-        # Arama çubuğu benzeri tasarım
-        search_frame = tk.Frame(main_frame, bg=self.bg_color, highlightbackground="#DADCE0", 
-                               highlightthickness=1, bd=0, padx=10, pady=10)
-        search_frame.pack(fill=tk.X, padx=40, pady=10)
-        
-        # Tarama butonu (Google tarzı büyük mavi buton)
-        self.scan_button = tk.Button(search_frame, text="Ağımı Tara", command=self.start_scan,
-                                  bg=self.button_color, fg="#FFFFFF", 
-                                  font=("Arial", 14), relief=tk.FLAT,
-                                  padx=20, pady=10)
-        self.scan_button.pack(pady=5)
-        
-        # Açıklama metni
-        description = tk.Label(search_frame, 
-                             text="Bu uygulama ağınızı ARP spoofing saldırılarına karşı tarar.", 
-                             font=("Arial", 10), bg=self.bg_color, fg="#5F6368")
-        description.pack(pady=(0, 5))
-        
-        # Sonuç kartı
-        self.result_card = tk.Frame(main_frame, bg=self.light_gray, 
-                                 highlightbackground="#DADCE0", highlightthickness=1, 
-                                 padx=20, pady=20)
-        self.result_card.pack(fill=tk.BOTH, expand=True, pady=15)
-        
-        # Sonuç kartı başlığı ve durum ikonu
-        self.status_icon = tk.Label(self.result_card, text="🔍", 
-                                 font=("Arial", 36), bg=self.light_gray)
-        self.status_icon.pack(pady=(0, 5))
-        
-        self.status_title = tk.Label(self.result_card, text="Ağınızın Durumu", 
-                                  font=("Arial", 16, "bold"), 
-                                  bg=self.light_gray, fg=self.text_color)
-        self.status_title.pack(pady=(0, 5))
-        
-        self.status_text = tk.Label(self.result_card, 
-                                 text="Ağınızın güvenlik durumunu görmek için 'Ağımı Tara' düğmesine tıklayın.",
-                                 wraplength=500, justify="center", 
-                                 font=("Arial", 11), bg=self.light_gray, fg="#5F6368")
-        self.status_text.pack(pady=(0, 10))
-        
-        # İlerleme çubuğu
-        self.progress = ttk.Progressbar(self.result_card, orient=tk.HORIZONTAL, length=300, mode='indeterminate')
-        
-        # Sonuç alanı (sadeleştirilmiş)
-        self.result_text = scrolledtext.ScrolledText(self.result_card, wrap=tk.WORD, height=6,
-                                                  bg="#FFFFFF", fg=self.text_color, 
-                                                  font=("Arial", 10), bd=1, relief=tk.FLAT)
-        self.result_text.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
-        self.result_text.config(state=tk.DISABLED)
-        
-        # Alt bilgi çubuğu - ayarlar
-        footer_frame = tk.Frame(main_frame, bg=self.bg_color)
-        footer_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        self.periodic_var = tk.BooleanVar()
-        self.startup_var = tk.BooleanVar()
-        self.period_hours = tk.IntVar(value=24)  # Varsayılan 24 saat
-        
-        # Periyodik tarama seçeneği (checkbox + ayar butonu)
-        periodic_frame = tk.Frame(footer_frame, bg=self.bg_color)
-        periodic_frame.pack(side=tk.LEFT, padx=(0, 10))
-        
-        periodic_check = tk.Checkbutton(periodic_frame, text="Periyodik tarama", 
-                                      variable=self.periodic_var, 
-                                      bg=self.bg_color, fg=self.text_color, 
-                                      font=("Arial", 10), bd=0)
-        periodic_check.pack(side=tk.LEFT)
-        
-        # Periyod ayar butonu
-        period_button = tk.Button(periodic_frame, text="⚙️", 
-                                command=self.show_period_settings,
-                                bg=self.bg_color, fg=self.text_color,
-                                font=("Arial", 9), relief=tk.FLAT,
-                                padx=2, pady=0)
-        period_button.pack(side=tk.LEFT, padx=(2, 0))
-        
-        # Periyod gösterme etiketi
-        self.period_label = tk.Label(periodic_frame, 
-                                  text=f"({self.period_hours.get()} saat)", 
-                                  bg=self.bg_color, fg="#5F6368", 
-                                  font=("Arial", 9))
-        self.period_label.pack(side=tk.LEFT, padx=(2, 0))
-        
-        # Otomatik başlatma 
-        startup_check = tk.Checkbutton(footer_frame, text="Açılışta başlat",
-                                     variable=self.startup_var,
-                                     bg=self.bg_color, fg=self.text_color, 
-                                     font=("Arial", 10), bd=0)
-        startup_check.pack(side=tk.LEFT)
-        
-        # Durdur butonu
-        self.stop_button = tk.Button(footer_frame, text="Durdur", 
-                                  command=self.stop_scan,
-                                  bg=self.warning_color, fg="#FFFFFF",
-                                  font=("Arial", 10), relief=tk.FLAT,
-                                  state=tk.DISABLED,
-                                  padx=10, pady=3)
-        self.stop_button.pack(side=tk.RIGHT)
-        
-        # Durum çubuğu
-        self.status_var = tk.StringVar()
-        self.status_var.set("Hazır")
-        status_bar = tk.Label(main_frame, textvariable=self.status_var,
-                            bd=1, relief=tk.SUNKEN, anchor=tk.W,
-                            bg=self.light_gray, fg="#5F6368", font=("Arial", 9))
-        status_bar.pack(side=tk.BOTTOM, fill=tk.X, pady=(5, 0))
+        # İçerikleri yükle
+        self.load_home_content()
         
         # Arka plan tarama değişkenleri
         self.periodic_running = False
         self.periodic_thread = None
         self.warning_window = None
+        self.periodic_var = tk.BooleanVar()
+        self.startup_var = tk.BooleanVar()
+        self.period_hours = tk.IntVar(value=24)  # Varsayılan 24 saat
+    
+    def setup_layout(self):
+        """Ana yerleşim düzenini oluşturur"""
+        # Ana container
+        self.main_container = tk.Frame(self.root, bg=self.bg_color)
+        self.main_container.pack(fill=tk.BOTH, expand=True)
+        
+        # Sol kenar çubuğu
+        self.sidebar = tk.Frame(self.main_container, bg=self.sidebar_color, width=220)
+        self.sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=0, pady=0)
+        self.sidebar.pack_propagate(False)  # Boyutu sabit tut
+        
+        # Spotify logo ve başlık
+        logo_frame = tk.Frame(self.sidebar, bg=self.sidebar_color)
+        logo_frame.pack(fill=tk.X, padx=20, pady=(20, 30))
+        
+        logo_text = tk.Label(logo_frame, text="🛡️ ARP Guardian", 
+                          font=("Arial", 16, "bold"), 
+                          bg=self.sidebar_color, fg=self.text_color)
+        logo_text.pack(anchor=tk.W)
+        
+        version_label = tk.Label(logo_frame, text="v2.0 - Ağ Güvenlik Aracı", 
+                              font=("Arial", 8), 
+                              bg=self.sidebar_color, fg="#B3B3B3")
+        version_label.pack(anchor=tk.W, pady=(2, 0))
+        
+        # Kenar çubuğu navigasyonu
+        self.create_sidebar_button("Ana Sayfa", self.icons["home"], self.load_home_content)
+        self.create_sidebar_button("Ağ Taraması", self.icons["scan"], self.load_scan_content)
+        self.create_sidebar_button("Tarama Geçmişi", self.icons["history"], self.load_history_content)
+        self.create_sidebar_button("Ayarlar", self.icons["settings"], self.load_settings_content)
+        
+        # Bilgi etiketi
+        info_frame = tk.Frame(self.sidebar, bg=self.sidebar_color)
+        info_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=20, pady=20)
+        
+        info_label = tk.Label(info_frame, 
+                           text="Bu uygulama ağınızı ARP spoofing saldırılarına karşı korur.", 
+                           wraplength=180, justify=tk.LEFT,
+                           font=("Arial", 9), 
+                           bg=self.sidebar_color, fg="#B3B3B3")
+        info_label.pack(anchor=tk.W)
+        
+        # Ana içerik alanı
+        self.content_area = tk.Frame(self.main_container, bg=self.bg_color)
+        self.content_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=0, pady=0)
+        
+        # Alt durum çubuğu
+        self.status_var = tk.StringVar()
+        self.status_var.set("Hoş geldiniz! Ağınızı taramak için sol menüden 'Ağ Taraması' seçeneğine tıklayın.")
+        
+        self.status_bar = tk.Label(self.root, textvariable=self.status_var,
+                                bd=1, relief=tk.FLAT, anchor=tk.W,
+                                bg="#282828", fg="#B3B3B3", font=("Arial", 9),
+                                padx=10, pady=5)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+    
+    def create_sidebar_button(self, text, icon, command):
+        """Kenar çubuğu navigasyon butonu oluşturur"""
+        btn_frame = tk.Frame(self.sidebar, bg=self.sidebar_color, padx=15, pady=5)
+        btn_frame.pack(fill=tk.X, padx=5, pady=2)
+        
+        # Buton özellikleri
+        btn_frame.bind("<Button-1>", lambda e: command())
+        btn_frame.bind("<Enter>", 
+                     lambda e: btn_frame.configure(background="#282828"))
+        btn_frame.bind("<Leave>", 
+                     lambda e: btn_frame.configure(background=self.sidebar_color))
+        
+        # Buton içeriği
+        icon_label = tk.Label(btn_frame, text=icon, font=("Arial", 14),
+                           bg=btn_frame["bg"], fg=self.text_color)
+        icon_label.pack(side=tk.LEFT, pady=5)
+        
+        text_label = tk.Label(btn_frame, text=text, font=("Arial", 12),
+                           bg=btn_frame["bg"], fg=self.text_color)
+        text_label.pack(side=tk.LEFT, padx=10, pady=5)
+        
+        # Alt widget'lar için de hover efekti
+        icon_label.bind("<Enter>", 
+                      lambda e: btn_frame.configure(background="#282828"))
+        text_label.bind("<Enter>", 
+                      lambda e: btn_frame.configure(background="#282828"))
+        icon_label.bind("<Button-1>", lambda e: command())
+        text_label.bind("<Button-1>", lambda e: command())
+    
+    def clear_content(self):
+        """İçerik alanını temizler"""
+        for widget in self.content_area.winfo_children():
+            widget.destroy()
+    
+    def load_home_content(self):
+        """Ana sayfa içeriğini yükler"""
+        self.clear_content()
+        
+        # Başlık
+        header = tk.Frame(self.content_area, bg=self.bg_color)
+        header.pack(fill=tk.X, padx=30, pady=(30, 0))
+        
+        title = tk.Label(header, text="ARP Guardian'a Hoş Geldiniz", 
+                       font=("Arial", 24, "bold"), 
+                       bg=self.bg_color, fg=self.text_color)
+        title.pack(anchor=tk.W)
+        
+        subtitle = tk.Label(header, 
+                         text="Ağınızın güvenliğini korumak için gelişmiş bir araç", 
+                         font=("Arial", 12), 
+                         bg=self.bg_color, fg="#B3B3B3")
+        subtitle.pack(anchor=tk.W, pady=(5, 0))
+        
+        # İçerik
+        content_frame = tk.Frame(self.content_area, bg=self.bg_color)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=20)
+        
+        # Öne çıkan özellikler
+        features_label = tk.Label(content_frame, text="Neler Yapabilirsiniz?", 
+                               font=("Arial", 18, "bold"), 
+                               bg=self.bg_color, fg=self.text_color)
+        features_label.pack(anchor=tk.W, pady=(0, 15))
+        
+        # Özellik kartları için container
+        cards_container = tk.Frame(content_frame, bg=self.bg_color)
+        cards_container.pack(fill=tk.BOTH, padx=0, pady=0)
+        
+        # Kartlar için grid düzeni
+        cards_container.columnconfigure(0, weight=1)
+        cards_container.columnconfigure(1, weight=1)
+        cards_container.columnconfigure(2, weight=1)
+        
+        # Özellik kartları
+        self.create_feature_card(
+            cards_container, 0, 0,
+            "🔍 Ağ Taraması", 
+            "Ağınızdaki tüm cihazları tarayarak ARP spoofing saldırılarını tespit edin.",
+            self.load_scan_content
+        )
+        
+        self.create_feature_card(
+            cards_container, 0, 1,
+            "🕒 Periyodik Kontrol", 
+            "Ağınızı düzenli aralıklarla otomatik olarak kontrol edin.",
+            self.load_settings_content
+        )
+        
+        self.create_feature_card(
+            cards_container, 0, 2,
+            "📊 Tarama Geçmişi", 
+            "Önceki taramaların sonuçlarını görüntüleyin ve analiz edin.",
+            self.load_history_content
+        )
+        
+        self.create_feature_card(
+            cards_container, 1, 0,
+            "⚠️ Uyarı Sistemi", 
+            "Tehlikeli durumlar tespit edildiğinde anında bildirim alın.",
+            lambda: messagebox.showinfo("Bilgi", "Bu özellik yakında gelecek!")
+        )
+        
+        self.create_feature_card(
+            cards_container, 1, 1,
+            "🔒 Güvenlik Önerileri", 
+            "Ağınızı daha güvenli hale getirmek için öneriler alın.",
+            lambda: messagebox.showinfo("Bilgi", "Bu özellik yakında gelecek!")
+        )
+        
+        self.create_feature_card(
+            cards_container, 1, 2,
+            "⚙️ Özelleştirme", 
+            "Uygulamayı ihtiyaçlarınıza göre özelleştirin.",
+            self.load_settings_content
+        )
+        
+    def create_feature_card(self, parent, row, col, title, description, command):
+        """Özellik kartı oluşturur"""
+        # Kart çerçevesi
+        card = RoundedFrame(parent, bg_color=self.card_color, corner_radius=10)
+        card.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+        
+        # İçerik çerçevesi
+        content = tk.Frame(card, bg=self.card_color)
+        content.place(relx=0.5, rely=0.5, anchor=tk.CENTER, width=200, height=150)
+        
+        # Başlık ve açıklama
+        title_label = tk.Label(content, text=title, 
+                            font=("Arial", 14, "bold"), 
+                            bg=self.card_color, fg=self.text_color,
+                            wraplength=180)
+        title_label.pack(anchor=tk.CENTER, pady=(20, 10))
+        
+        desc_label = tk.Label(content, text=description, 
+                           font=("Arial", 10), 
+                           bg=self.card_color, fg="#B3B3B3",
+                           wraplength=180, justify=tk.CENTER)
+        desc_label.pack(anchor=tk.CENTER, pady=(0, 15))
+        
+        # Hover efekti
+        for widget in [card, content, title_label, desc_label]:
+            widget.bind("<Enter>", 
+                     lambda e, c=card: c.configure(bg_color=self.card_hover))
+            widget.bind("<Leave>", 
+                     lambda e, c=card: c.configure(bg_color=self.card_color))
+            widget.bind("<Button-1>", lambda e: command())
+    
+    def load_scan_content(self):
+        """Tarama ekranını yükler"""
+        self.clear_content()
+        
+        # Başlık
+        header = tk.Frame(self.content_area, bg=self.bg_color)
+        header.pack(fill=tk.X, padx=30, pady=(30, 20))
+        
+        title = tk.Label(header, text="Ağ Taraması", 
+                       font=("Arial", 24, "bold"), 
+                       bg=self.bg_color, fg=self.text_color)
+        title.pack(anchor=tk.W)
+        
+        subtitle = tk.Label(header, 
+                         text="Ağınızı ARP spoofing saldırılarına karşı kontrol edin", 
+                         font=("Arial", 12), 
+                         bg=self.bg_color, fg="#B3B3B3")
+        subtitle.pack(anchor=tk.W, pady=(5, 0))
+        
+        # Tarama kontrolleri
+        controls_frame = tk.Frame(self.content_area, bg=self.bg_color)
+        controls_frame.pack(fill=tk.X, padx=30, pady=(0, 10))
+        
+        # Tarama butonu - Spotify stilinde
+        self.scan_button = SpotifyButton(
+            controls_frame, 
+            text="Ağımı Tara", 
+            command=self.start_scan,
+            width=150, 
+            height=40,
+            bg_color=self.accent_color,
+            hover_color="#1ED760",
+            font=("Arial", 12, "bold")
+        )
+        self.scan_button.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # İlerleme çubuğu
+        self.progress_frame = tk.Frame(controls_frame, bg=self.bg_color)
+        self.progress_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 0))
+        
+        # Özel stil için ttk kullanıyoruz
+        style = ttk.Style()
+        style.theme_use('default')
+        style.configure("Spotify.Horizontal.TProgressbar", 
+                       background=self.accent_color,
+                       troughcolor=self.card_color,
+                       borderwidth=0,
+                       thickness=8)
+        
+        self.progress = ttk.Progressbar(
+            self.progress_frame, 
+            orient=tk.HORIZONTAL, 
+            length=300, 
+            mode='indeterminate',
+            style="Spotify.Horizontal.TProgressbar"
+        )
+        
+        # Sonuç kartı - yuvarlak köşeli
+        self.result_card = RoundedFrame(
+            self.content_area, 
+            bg_color=self.card_color, 
+            corner_radius=10,
+            padx=20, 
+            pady=20
+        )
+        self.result_card.pack(fill=tk.BOTH, expand=True, padx=30, pady=(10, 30))
+        
+        # Sonuç kartı içeriği
+        result_content = tk.Frame(self.result_card, bg=self.card_color)
+        result_content.place(relx=0.5, rely=0.1, anchor=tk.N, relwidth=0.9, relheight=0.8)
+        
+        # Durum simgesi
+        self.status_icon = tk.Label(result_content, text=self.icons["info"], 
+                                 font=("Arial", 48), 
+                                 bg=self.card_color, fg=self.text_color)
+        self.status_icon.pack(pady=(0, 5))
+        
+        # Durum başlığı
+        self.status_title = tk.Label(result_content, text="Ağınızın Durumu", 
+                                  font=("Arial", 16, "bold"), 
+                                  bg=self.card_color, fg=self.text_color)
+        self.status_title.pack(pady=(0, 5))
+        
+        # Durum açıklaması
+        self.status_text = tk.Label(result_content, 
+                                 text="Ağınızın güvenlik durumunu görmek için 'Ağımı Tara' düğmesine tıklayın.",
+                                 wraplength=600, justify="center", 
+                                 font=("Arial", 12), 
+                                 bg=self.card_color, fg="#B3B3B3")
+        self.status_text.pack(pady=(0, 20))
+        
+        # Sonuç alanı
+        self.result_text = scrolledtext.ScrolledText(
+            result_content, 
+            wrap=tk.WORD, 
+            height=8,
+            bg="#282828", 
+            fg=self.text_color, 
+            font=("Consolas", 10), 
+            bd=0
+        )
+        self.result_text.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        self.result_text.config(state=tk.DISABLED)
     
     def start_scan(self):
         """Tarama işlemini başlatır"""
         # Arayüzü güncelle
         self.status_var.set("Ağınız taranıyor...")
-        self.scan_button.config(state=tk.DISABLED)
-        self.progress.pack(fill=tk.X, pady=10)
+        self.scan_button.configure(state=tk.DISABLED)
+        self.progress.pack(fill=tk.X, expand=True)
         self.progress.start()
         
         # Sonuç alanını temizle
@@ -509,14 +839,14 @@ class ARP_GUI:
                 # İlerleme çubuğunu kapat ve düğmeyi etkinleştir
                 self.root.after(0, self.progress.stop)
                 self.root.after(0, self.progress.pack_forget)
-                self.root.after(0, lambda: self.scan_button.config(state=tk.NORMAL))
+                self.root.after(0, lambda: self.scan_button.configure(state=tk.NORMAL))
                 self.root.after(0, lambda: self.status_var.set("Tarama tamamlandı"))
                 
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror("Hata", f"Tarama sırasında hata: {str(e)}"))
             self.root.after(0, self.progress.stop)
             self.root.after(0, self.progress.pack_forget)
-            self.root.after(0, lambda: self.scan_button.config(state=tk.NORMAL))
+            self.root.after(0, lambda: self.scan_button.configure(state=tk.NORMAL))
             self.root.after(0, lambda: self.status_var.set("Tarama hatası"))
     
     def _update_ui(self, is_safe, important_lines, suspicious_entries):
@@ -529,15 +859,15 @@ class ARP_GUI:
         
         # Sonuç kartını güncelle
         if is_truly_safe:
-            self.status_icon.config(text="✅")
-            self.status_title.config(text="Ağınız Güvende", fg=self.success_color)
+            self.status_icon.config(text=self.icons["success"])
+            self.status_title.config(text="Ağınız Güvende", fg=self.accent_color)
             self.status_text.config(text="Herhangi bir ARP spoofing tehdidi tespit edilmedi.")
-            self.result_card.config(highlightbackground=self.success_color)
+            self.result_card.configure(bg_color=self.card_color)
         else:
-            self.status_icon.config(text="⚠️")
+            self.status_icon.config(text=self.icons["warning"])
             self.status_title.config(text="Saldırı Riski!", fg=self.warning_color)
             self.status_text.config(text="Ağınızda şüpheli ARP etkinliği tespit edildi! Detaylar için aşağıya bakın.")
-            self.result_card.config(highlightbackground=self.warning_color)
+            self.result_card.configure(bg_color="#282828")
             
             # Gerçek şüpheli durum varsa uyarı penceresi göster
             if len(real_threats) > 0:
@@ -554,7 +884,7 @@ class ARP_GUI:
             elif "✅" in line:
                 self.result_text.insert(tk.END, line + "\n", "success")
                 if "success" not in self.result_text.tag_names():
-                    self.result_text.tag_configure("success", foreground=self.success_color)
+                    self.result_text.tag_configure("success", foreground=self.accent_color)
             else:
                 self.result_text.insert(tk.END, line + "\n")
         
@@ -571,76 +901,85 @@ class ARP_GUI:
         self.warning_window = Toplevel(self.root)
         self.warning_window.title("Güvenlik Uyarısı")
         self.warning_window.geometry("500x450")
-        self.warning_window.configure(bg="#FFFFFF")
+        self.warning_window.configure(bg=self.bg_color)
         self.warning_window.transient(self.root)
         self.warning_window.grab_set()
         
         # İçerik
-        content = tk.Frame(self.warning_window, bg="#FFFFFF", padx=20, pady=20)
+        content = tk.Frame(self.warning_window, bg=self.bg_color, padx=20, pady=20)
         content.pack(fill=tk.BOTH, expand=True)
         
         # Başlık ve ikon
-        header = tk.Frame(content, bg="#FFFFFF")
+        header = tk.Frame(content, bg=self.bg_color)
         header.pack(fill=tk.X, pady=(0, 15))
         
         # Uyarı ikonu
-        icon = tk.Label(header, text="⚠️", font=("Arial", 36), fg=self.warning_color, bg="#FFFFFF")
+        icon = tk.Label(header, text=self.icons["warning"], font=("Arial", 36), 
+                      fg=self.warning_color, bg=self.bg_color)
         icon.pack(side=tk.LEFT, padx=(0, 15))
         
-        header_text = tk.Frame(header, bg="#FFFFFF")
+        header_text = tk.Frame(header, bg=self.bg_color)
         header_text.pack(side=tk.LEFT)
         
         warning_title = tk.Label(header_text, text="Güvenlik Uyarısı", 
-                              font=("Arial", 16, "bold"), fg=self.warning_color, bg="#FFFFFF")
-        warning_title.pack(anchor="w")
+                              font=("Arial", 16, "bold"), 
+                              fg=self.warning_color, bg=self.bg_color)
+        warning_title.pack(anchor=tk.W)
         
         warning_subtitle = tk.Label(header_text, text="ARP spoofing riski tespit edildi", 
-                                 font=("Arial", 12), fg="#5F6368", bg="#FFFFFF")
-        warning_subtitle.pack(anchor="w")
+                                 font=("Arial", 12), 
+                                 fg="#B3B3B3", bg=self.bg_color)
+        warning_subtitle.pack(anchor=tk.W)
         
         # Açıklama kartı
-        description_card = tk.Frame(content, bg=self.light_gray, 
-                                 highlightbackground="#DADCE0", highlightthickness=1,
-                                 padx=15, pady=15)
+        description_card = RoundedFrame(content, bg_color=self.card_color, corner_radius=10)
         description_card.pack(fill=tk.X, pady=10)
         
-        description = tk.Label(description_card, 
+        description_content = tk.Frame(description_card, bg=self.card_color)
+        description_content.place(relx=0.5, rely=0.5, anchor=tk.CENTER, relwidth=0.9, relheight=0.8)
+        
+        description = tk.Label(description_content, 
                             text="""ARP spoofing, ağınızda kötü niyetli bir cihazın kendisini başka bir cihaz 
                                  gibi göstererek trafiği dinlemesi veya değiştirmesi durumudur.
                                  
                                  Bu saldırı, kredi kartı bilgileri, şifreler ve diğer hassas bilgilerin 
                                  çalınmasına yol açabilir.""",
-                            wraplength=430, justify="left", 
-                            bg=self.light_gray, fg="#202124", font=("Arial", 10))
+                            wraplength=430, justify=tk.LEFT, 
+                            bg=self.card_color, fg=self.text_color, font=("Arial", 10))
         description.pack(fill=tk.X)
         
         # Tespit edilen tehditler
         threats_label = tk.Label(content, text="Tespit Edilen Tehditler:", 
-                              font=("Arial", 12, "bold"), bg="#FFFFFF", fg="#202124")
-        threats_label.pack(anchor="w", pady=(15, 5))
+                              font=("Arial", 12, "bold"), 
+                              bg=self.bg_color, fg=self.text_color)
+        threats_label.pack(anchor=tk.W, pady=(15, 5))
         
-        threats_card = tk.Frame(content, bg=self.light_gray, 
-                             highlightbackground=self.warning_color, highlightthickness=1,
-                             padx=15, pady=15)
+        # Tehditler kartı
+        threats_card = RoundedFrame(content, bg_color=self.card_color, corner_radius=10)
         threats_card.pack(fill=tk.X, pady=(0, 10))
+        
+        threats_content = tk.Frame(threats_card, bg=self.card_color)
+        threats_content.place(relx=0.5, rely=0.5, anchor=tk.CENTER, relwidth=0.9, relheight=0.8)
         
         for entry in suspicious_entries:
             message = entry.get("message", "")
             if message:
-                threat_label = tk.Label(threats_card, text=message, 
-                                     wraplength=430, justify="left", 
-                                     bg=self.light_gray, fg="#202124", font=("Arial", 10))
-                threat_label.pack(pady=2, anchor="w")
+                threat_label = tk.Label(threats_content, text=message, 
+                                     wraplength=430, justify=tk.LEFT, 
+                                     bg=self.card_color, fg=self.text_color, font=("Arial", 10))
+                threat_label.pack(pady=2, anchor=tk.W)
         
         # Önerilen önlemler kartı
-        actions_card = tk.Frame(content, bg=self.light_gray, 
-                             highlightbackground="#DADCE0", highlightthickness=1,
-                             padx=15, pady=15)
-        actions_card.pack(fill=tk.X, pady=10)
+        actions_label = tk.Label(content, text="Önerilen Önlemler:", 
+                              font=("Arial", 12, "bold"), 
+                              bg=self.bg_color, fg=self.text_color)
+        actions_label.pack(anchor=tk.W, pady=(15, 5))
         
-        actions_title = tk.Label(actions_card, text="Önerilen Önlemler", 
-                              font=("Arial", 12, "bold"), bg=self.light_gray, fg="#202124")
-        actions_title.pack(anchor="w", pady=(0, 10))
+        actions_card = RoundedFrame(content, bg_color=self.card_color, corner_radius=10)
+        actions_card.pack(fill=tk.X, pady=(0, 10))
+        
+        actions_content = tk.Frame(actions_card, bg=self.card_color)
+        actions_content.place(relx=0.5, rely=0.5, anchor=tk.CENTER, relwidth=0.9, relheight=0.8)
         
         # Önerilen önlemler listesi
         actions = [
@@ -651,22 +990,21 @@ class ARP_GUI:
             "Statik ARP girdileri ekleyerek kritik cihazların MAC adreslerini sabitleyin."
         ]
         
-        for action in actions:
-            action_frame = tk.Frame(actions_card, bg=self.light_gray)
+        for i, action in enumerate(actions):
+            action_frame = tk.Frame(actions_content, bg=self.card_color)
             action_frame.pack(fill=tk.X, pady=2)
             
             bullet = tk.Label(action_frame, text="•", font=("Arial", 12, "bold"),
-                           bg=self.light_gray, fg=self.button_color)
+                           bg=self.card_color, fg=self.accent_color)
             bullet.pack(side=tk.LEFT, padx=(0, 5))
             
-            action_text = tk.Label(action_frame, text=action, wraplength=400, justify="left",
-                                font=("Arial", 10), bg=self.light_gray, fg="#202124")
-            action_text.pack(side=tk.LEFT, fill=tk.X, expand=True, anchor="w")
+            action_text = tk.Label(action_frame, text=action, wraplength=400, justify=tk.LEFT,
+                                font=("Arial", 10), bg=self.card_color, fg=self.text_color)
+            action_text.pack(side=tk.LEFT, fill=tk.X, expand=True, anchor=tk.W)
         
         # Kapat butonu
-        close_btn = tk.Button(content, text="Anladım", command=self.warning_window.destroy,
-                           bg=self.button_color, fg="#FFFFFF", font=("Arial", 11, "bold"),
-                           relief=tk.FLAT, padx=15, pady=8)
+        close_btn = SpotifyButton(content, text="Anladım", command=self.warning_window.destroy,
+                              width=100, height=35, bg_color=self.accent_color)
         close_btn.pack(side=tk.RIGHT, pady=10)
         
         # Pencereyi ortala
@@ -677,10 +1015,178 @@ class ARP_GUI:
         y = (self.warning_window.winfo_screenheight() // 2) - (height // 2)
         self.warning_window.geometry('{}x{}+{}+{}'.format(width, height, x, y))
     
+    def load_history_content(self):
+        """Tarama geçmişi ekranını yükler"""
+        self.clear_content()
+        
+        # Başlık
+        header = tk.Frame(self.content_area, bg=self.bg_color)
+        header.pack(fill=tk.X, padx=30, pady=(30, 20))
+        
+        title = tk.Label(header, text="Tarama Geçmişi", 
+                       font=("Arial", 24, "bold"), 
+                       bg=self.bg_color, fg=self.text_color)
+        title.pack(anchor=tk.W)
+        
+        subtitle = tk.Label(header, 
+                         text="Önceki taramaların sonuçlarını görüntüleyin", 
+                         font=("Arial", 12), 
+                         bg=self.bg_color, fg="#B3B3B3")
+        subtitle.pack(anchor=tk.W, pady=(5, 0))
+        
+        # İçerik
+        content_frame = RoundedFrame(self.content_area, bg_color=self.card_color, corner_radius=10)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=(10, 30))
+        
+        # İçerik alanı
+        info_frame = tk.Frame(content_frame, bg=self.card_color)
+        info_frame.place(relx=0.5, rely=0.5, anchor=tk.CENTER, relwidth=0.8, relheight=0.8)
+        
+        # Henüz uygulama geçmişi yok
+        info_icon = tk.Label(info_frame, text="🕒", font=("Arial", 48), 
+                         bg=self.card_color, fg=self.text_color)
+        info_icon.pack(pady=(0, 10))
+        
+        info_title = tk.Label(info_frame, text="Geçmiş Bulunamadı", 
+                          font=("Arial", 16, "bold"), 
+                          bg=self.card_color, fg=self.text_color)
+        info_title.pack(pady=(0, 5))
+        
+        info_text = tk.Label(info_frame, 
+                         text="Tarama geçmişi henüz oluşturulmadı. Bir tarama yaptığınızda sonuçlar burada görüntülenecektir.",
+                         wraplength=500, justify=tk.CENTER, 
+                         font=("Arial", 12), 
+                         bg=self.card_color, fg="#B3B3B3")
+        info_text.pack(pady=(0, 20))
+        
+        # Tarama butonu
+        scan_btn = SpotifyButton(info_frame, text="Tarama Yap", command=self.load_scan_content,
+                             width=150, height=40, bg_color=self.accent_color)
+        scan_btn.pack()
+    
+    def load_settings_content(self):
+        """Ayarlar ekranını yükler"""
+        self.clear_content()
+        
+        # Başlık
+        header = tk.Frame(self.content_area, bg=self.bg_color)
+        header.pack(fill=tk.X, padx=30, pady=(30, 20))
+        
+        title = tk.Label(header, text="Ayarlar", 
+                       font=("Arial", 24, "bold"), 
+                       bg=self.bg_color, fg=self.text_color)
+        title.pack(anchor=tk.W)
+        
+        subtitle = tk.Label(header, 
+                         text="Uygulama ayarlarını özelleştirin", 
+                         font=("Arial", 12), 
+                         bg=self.bg_color, fg="#B3B3B3")
+        subtitle.pack(anchor=tk.W, pady=(5, 0))
+        
+        # Ayarlar kartı
+        settings_card = RoundedFrame(self.content_area, bg_color=self.card_color, corner_radius=10)
+        settings_card.pack(fill=tk.BOTH, expand=True, padx=30, pady=(10, 30))
+        
+        # Ayarlar içeriği
+        settings_content = tk.Frame(settings_card, bg=self.card_color)
+        settings_content.place(relx=0.5, rely=0.1, anchor=tk.N, relwidth=0.9, relheight=0.8)
+        
+        # Genel Ayarlar başlığı
+        general_title = tk.Label(settings_content, text="Genel Ayarlar", 
+                              font=("Arial", 16, "bold"), 
+                              bg=self.card_color, fg=self.text_color)
+        general_title.pack(anchor=tk.W, pady=(20, 10))
+        
+        # Periyodik tarama ayarı
+        periodic_frame = tk.Frame(settings_content, bg=self.card_color)
+        periodic_frame.pack(fill=tk.X, pady=5)
+        
+        # Özel stil için ttk checkbutton
+        style = ttk.Style()
+        style.configure("Spotify.TCheckbutton", 
+                      background=self.card_color, 
+                      foreground=self.text_color)
+        
+        # Periyodik tarama seçeneği
+        periodic_check = ttk.Checkbutton(
+            periodic_frame, 
+            text="Periyodik tarama", 
+            variable=self.periodic_var, 
+            style="Spotify.TCheckbutton"
+        )
+        periodic_check.pack(side=tk.LEFT)
+        
+        # Periyodik tarama ayarları
+        period_frame = tk.Frame(settings_content, bg=self.card_color)
+        period_frame.pack(fill=tk.X, pady=5)
+        
+        period_label = tk.Label(period_frame, text="Tarama sıklığı:", 
+                             font=("Arial", 12),
+                             bg=self.card_color, fg=self.text_color)
+        period_label.pack(side=tk.LEFT, padx=(20, 10))
+        
+        # Saat seçimi için combobox
+        period_values = ["1", "2", "4", "6", "8", "12", "24", "48", "72"]
+        period_combobox = ttk.Combobox(
+            period_frame, 
+            values=period_values, 
+            width=5, 
+            state="readonly",
+            font=("Arial", 12)
+        )
+        
+        # Mevcut değeri seç
+        current_hour = str(self.period_hours.get())
+        if current_hour in period_values:
+            period_combobox.set(current_hour)
+        else:
+            period_combobox.set("24")
+            
+        period_combobox.pack(side=tk.LEFT)
+        
+        hours_label = tk.Label(period_frame, text="saat", 
+                            font=("Arial", 12),
+                            bg=self.card_color, fg=self.text_color)
+        hours_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Sistem başlangıcında çalıştırma
+        startup_frame = tk.Frame(settings_content, bg=self.card_color)
+        startup_frame.pack(fill=tk.X, pady=5)
+        
+        startup_check = ttk.Checkbutton(
+            startup_frame, 
+            text="Bilgisayar açılışında başlat", 
+            variable=self.startup_var, 
+            style="Spotify.TCheckbutton"
+        )
+        startup_check.pack(side=tk.LEFT)
+        
+        # Kaydet butonu
+        save_frame = tk.Frame(settings_content, bg=self.card_color)
+        save_frame.pack(fill=tk.X, pady=(20, 0))
+        
+        save_btn = SpotifyButton(
+            save_frame, 
+            text="Kaydet", 
+            command=lambda: self.save_settings(period_combobox.get()),
+            width=100, 
+            height=35, 
+            bg_color=self.accent_color
+        )
+        save_btn.pack(side=tk.RIGHT)
+    
+    def save_settings(self, period_value):
+        """Ayarları kaydeder"""
+        try:
+            hours = int(period_value)
+            self.period_hours.set(hours)
+            messagebox.showinfo("Ayarlar", "Ayarlarınız başarıyla kaydedildi.")
+        except ValueError:
+            messagebox.showerror("Hata", "Geçerli bir saat değeri giriniz.")
+    
     def start_periodic_scan(self):
         """Periyodik taramayı başlatır"""
         self.periodic_running = True
-        self.stop_button.config(state=tk.NORMAL)
         
         # Seçilen periyot
         hours = self.period_hours.get()
@@ -703,107 +1209,11 @@ class ARP_GUI:
         next_time_str = time.strftime("%H:%M:%S", next_time)
         self.status_var.set(f"Periyodik tarama aktif - Sonraki tarama: {next_time_str}")
     
-    def show_period_settings(self):
-        """Periyodik tarama aralığı ayarlama penceresi gösterir"""
-        # Yeni pencere oluştur
-        settings_window = Toplevel(self.root)
-        settings_window.title("Periyodik Tarama Ayarları")
-        settings_window.geometry("350x250")
-        settings_window.configure(bg="#FFFFFF")
-        settings_window.resizable(False, False)
-        settings_window.transient(self.root)
-        settings_window.grab_set()
-        
-        # İçerik çerçevesi
-        content = tk.Frame(settings_window, bg="#FFFFFF", padx=20, pady=20)
-        content.pack(fill=tk.BOTH, expand=True)
-        
-        # Başlık
-        title_label = tk.Label(content, text="Periyodik Tarama Aralığı", 
-                             font=("Arial", 14, "bold"), 
-                             bg="#FFFFFF", fg=self.text_color)
-        title_label.pack(pady=(0, 15))
-        
-        # Açıklama
-        desc_label = tk.Label(content, 
-                           text="Ağınızın ne sıklıkla taranacağını seçin. Tarama tamamlandıktan sonra, uygulama arka planda çalışmaya devam edecek.",
-                           wraplength=300, justify="center", 
-                           bg="#FFFFFF", fg="#5F6368", 
-                           font=("Arial", 10))
-        desc_label.pack(pady=(0, 15))
-        
-        # Saat seçenekleri 
-        values_frame = tk.Frame(content, bg="#FFFFFF")
-        values_frame.pack(pady=10)
-        
-        hours_label = tk.Label(values_frame, text="Saat:", 
-                            bg="#FFFFFF", fg=self.text_color, 
-                            font=("Arial", 12))
-        hours_label.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Saat değerleri (string olarak)
-        hour_values = ["1", "2", "4", "6", "8", "12", "24", "48", "72"]
-        
-        # Saat seçimi combobox
-        hour_combobox = ttk.Combobox(values_frame, 
-                                  values=hour_values, 
-                                  width=5, 
-                                  state="readonly",
-                                  font=("Arial", 12))
-        
-        # Mevcut değeri seç
-        current_hour = str(self.period_hours.get())  # int'den string'e çevir
-        if current_hour in hour_values:
-            hour_combobox.set(current_hour)
-        else:
-            hour_combobox.set("24")  # Varsayılan 24 saat
-            
-        hour_combobox.pack(side=tk.LEFT)
-        
-        # Butonlar
-        button_frame = tk.Frame(content, bg="#FFFFFF")
-        button_frame.pack(fill=tk.X, pady=(20, 0))
-        
-        cancel_btn = tk.Button(button_frame, text="İptal", 
-                            command=settings_window.destroy,
-                            bg="#E8EAED", fg=self.text_color, 
-                            font=("Arial", 11),
-                            relief=tk.FLAT, padx=15, pady=8)
-        cancel_btn.pack(side=tk.LEFT)
-        
-        # Kaydet butonu
-        def save_settings():
-            try:
-                hours = int(hour_combobox.get())
-                self.period_hours.set(hours)
-                self.period_label.config(text=f"({hours} saat)")
-                settings_window.destroy()
-            except ValueError:
-                messagebox.showerror("Hata", "Geçerli bir saat değeri giriniz.")
-        
-        save_btn = tk.Button(button_frame, text="Kaydet", 
-                          command=save_settings,
-                          bg=self.button_color, fg="#FFFFFF", 
-                          font=("Arial", 11, "bold"),
-                          relief=tk.FLAT, padx=15, pady=8)
-        save_btn.pack(side=tk.RIGHT)
-        
-        # Pencereyi ortala
-        settings_window.update_idletasks()
-        width = settings_window.winfo_width()
-        height = settings_window.winfo_height()
-        x = (settings_window.winfo_screenwidth() // 2) - (width // 2)
-        y = (settings_window.winfo_screenheight() // 2) - (height // 2)
-        settings_window.geometry('{}x{}+{}+{}'.format(width, height, x, y))
-    
     def _periodic_thread(self):
         """Periyodik tarama arka plan thread'i"""
         # Seçilen saat değerine göre saniye hesapla
         hours = self.period_hours.get()
         interval = hours * 3600  # Saat başına 3600 saniye
-        
-        # Test için daha kısa interval
-        #interval = 60  # 1 dakika
         
         while self.periodic_running:
             # Zaman sayacı ve durum gösterimi
@@ -831,17 +1241,9 @@ class ARP_GUI:
             # Taramanın tamamlanmasını bekle
             time.sleep(5)
     
-    def stop_scan(self):
-        """Periyodik taramayı durdurur"""
-        if self.periodic_running:
-            self.periodic_running = False
-            self.stop_button.config(state=tk.DISABLED)
-            self.status_var.set("Periyodik tarama durduruldu")
-            messagebox.showinfo("Periyodik Tarama", "Periyodik tarama durduruldu.")
-
 
 # Program çalıştırma
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ARP_GUI(root)
+    app = ARP_GUI_Spotify(root)
     root.mainloop()
