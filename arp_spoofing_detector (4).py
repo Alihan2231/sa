@@ -206,34 +206,59 @@ def detect_arp_spoofing(arp_table):
     return suspicious_entries
 
 # Ana ARP tarama fonksiyonu
-def arp_kontrol_et():
-    """
-    ARP tablosunu kontrol ederek olası ARP spoofing saldırılarını tespit eder.
-    Bu fonksiyon GUI tarafından çağrılır.
-    """
-    print("=" * 60)
-    print("🔍 ARP Tablosu Taraması Başlatılıyor...")
-    print("=" * 60)
+def _update_ui(self, is_safe, important_lines, suspicious_entries):
+    """Tarama sonuçlarına göre arayüzü günceller"""
+    # Gerçekten tehlikeli durumları filtrele - sadece info olmayan girdiler
+    real_threats = [entry for entry in suspicious_entries if not entry.get("type", "").startswith("info_")]
     
-    # ARP tablosunu al
-    arp_table = get_arp_table()
+    # Gerçekten tehlike var mı kontrol et
+    is_truly_safe = len(real_threats) == 0
     
-    if not arp_table:
-        print("❌ ARP tablosu alınamadı veya boş.")
-        return
+    # Sonuç kartını güncelle
+    if is_truly_safe:
+        self.status_icon.config(text="✅")
+        self.status_title.config(text="Ağınız Güvende", fg=self.success_color)
+        self.status_text.config(text="Herhangi bir ARP spoofing tehdidi tespit edilmedi.")
+        self.result_card.config(highlightbackground=self.success_color)
+    else:
+        self.status_icon.config(text="⚠️")
+        self.status_title.config(text="Saldırı Riski!", fg=self.warning_color)
+        self.status_text.config(text="Ağınızda şüpheli ARP etkinliği tespit edildi! Detaylar için aşağıya bakın.")
+        self.result_card.config(highlightbackground=self.warning_color)
+        
+        # Gerçek şüpheli durum varsa uyarı penceresi göster
+        if len(real_threats) > 0:
+            self.root.after(500, lambda: self.show_warning(real_threats))
+print("\n📊 Analiz Özeti:")
+print("-" * 60)
+print(f"Toplam kayıt sayısı: {len(arp_table)}")
+# Bilgi girişleri olmayan şüpheli kayıtların sayısını hesapla
+gercek_supheli_sayisi = len([entry for entry in suspicious_entries 
+                            if entry["type"] not in ["info_broadcast", "info_multicast"]])
+print(f"Şüpheli kayıt sayısı: {gercek_supheli_sayisi}")
+
+if gercek_supheli_sayisi > 0:
+    şüpheli_tiplerini_say = defaultdict(int)
+    # Sadece gerçek şüpheli durumları say
+    for entry in suspicious_entries:
+        if entry["type"] not in ["info_broadcast", "info_multicast"]:
+            şüpheli_tiplerini_say[entry["type"]] += 1
     
-    # Varsayılan ağ geçidini bul
-    gateway = get_default_gateway()
+    for tip, sayı in şüpheli_tiplerini_say.items():
+        tip_açıklamaları = {
+            "multiple_ips": "Birden fazla IP'ye sahip MAC adresleri",
+            "gateway_multiple_macs": "Birden fazla MAC'e sahip ağ geçidi",
+            "broadcast_mac": "Broadcast MAC adresleri",
+            "multicast_mac": "Multicast MAC adresleri"
+        }
+        açıklama = tip_açıklamaları.get(tip, tip)
+        print(f"- {açıklama}: {sayı}")
     
-    print(f"🌐 Varsayılan Ağ Geçidi: {gateway['ip']} (MAC: {gateway['mac']})")
-    print("=" * 60)
+    print("\n⚠️ Şüpheli durumlar tespit edildi. Ağınızda ARP spoofing saldırısı olabilir.")
+    print("⚠️ Özellikle birden fazla MAC adresine sahip bir ağ geçidi varsa, bu ciddi bir tehlike işaretidir.")
+else:
+    print("\n✅ Ağınız şu an için güvenli görünüyor.")
     
-    # ARP tablosunu göster
-    print("\n📋 ARP Tablosu:")
-    print("-" * 60)
-    print(f"{'IP Adresi':<15} {'MAC Adresi':<20} {'Arayüz':<10}")
-    print("-" * 60)
-    for entry in arp_table:
         print(f"{entry['ip']:<15} {entry['mac']:<20} {entry['interface']:<10}")
     
     # ARP spoofing tespiti
