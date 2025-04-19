@@ -206,59 +206,34 @@ def detect_arp_spoofing(arp_table):
     return suspicious_entries
 
 # Ana ARP tarama fonksiyonu
-def _update_ui(self, is_safe, important_lines, suspicious_entries):
-    """Tarama sonuçlarına göre arayüzü günceller"""
-    # Gerçekten tehlikeli durumları filtrele - sadece info olmayan girdiler
-    real_threats = [entry for entry in suspicious_entries if not entry.get("type", "").startswith("info_")]
+def arp_kontrol_et():
+    """
+    ARP tablosunu kontrol ederek olası ARP spoofing saldırılarını tespit eder.
+    Bu fonksiyon GUI tarafından çağrılır.
+    """
+    print("=" * 60)
+    print("🔍 ARP Tablosu Taraması Başlatılıyor...")
+    print("=" * 60)
     
-    # Gerçekten tehlike var mı kontrol et
-    is_truly_safe = len(real_threats) == 0
+    # ARP tablosunu al
+    arp_table = get_arp_table()
     
-    # Sonuç kartını güncelle
-    if is_truly_safe:
-        self.status_icon.config(text="✅")
-        self.status_title.config(text="Ağınız Güvende", fg=self.success_color)
-        self.status_text.config(text="Herhangi bir ARP spoofing tehdidi tespit edilmedi.")
-        self.result_card.config(highlightbackground=self.success_color)
-    else:
-        self.status_icon.config(text="⚠️")
-        self.status_title.config(text="Saldırı Riski!", fg=self.warning_color)
-        self.status_text.config(text="Ağınızda şüpheli ARP etkinliği tespit edildi! Detaylar için aşağıya bakın.")
-        self.result_card.config(highlightbackground=self.warning_color)
-        
-        # Gerçek şüpheli durum varsa uyarı penceresi göster
-        if len(real_threats) > 0:
-            self.root.after(500, lambda: self.show_warning(real_threats))
-print("\n📊 Analiz Özeti:")
-print("-" * 60)
-print(f"Toplam kayıt sayısı: {len(arp_table)}")
-# Bilgi girişleri olmayan şüpheli kayıtların sayısını hesapla
-gercek_supheli_sayisi = len([entry for entry in suspicious_entries 
-                            if entry["type"] not in ["info_broadcast", "info_multicast"]])
-print(f"Şüpheli kayıt sayısı: {gercek_supheli_sayisi}")
-
-if gercek_supheli_sayisi > 0:
-    şüpheli_tiplerini_say = defaultdict(int)
-    # Sadece gerçek şüpheli durumları say
-    for entry in suspicious_entries:
-        if entry["type"] not in ["info_broadcast", "info_multicast"]:
-            şüpheli_tiplerini_say[entry["type"]] += 1
+    if not arp_table:
+        print("❌ ARP tablosu alınamadı veya boş.")
+        return
     
-    for tip, sayı in şüpheli_tiplerini_say.items():
-        tip_açıklamaları = {
-            "multiple_ips": "Birden fazla IP'ye sahip MAC adresleri",
-            "gateway_multiple_macs": "Birden fazla MAC'e sahip ağ geçidi",
-            "broadcast_mac": "Broadcast MAC adresleri",
-            "multicast_mac": "Multicast MAC adresleri"
-        }
-        açıklama = tip_açıklamaları.get(tip, tip)
-        print(f"- {açıklama}: {sayı}")
+    # Varsayılan ağ geçidini bul
+    gateway = get_default_gateway()
     
-    print("\n⚠️ Şüpheli durumlar tespit edildi. Ağınızda ARP spoofing saldırısı olabilir.")
-    print("⚠️ Özellikle birden fazla MAC adresine sahip bir ağ geçidi varsa, bu ciddi bir tehlike işaretidir.")
-else:
-    print("\n✅ Ağınız şu an için güvenli görünüyor.")
+    print(f"🌐 Varsayılan Ağ Geçidi: {gateway['ip']} (MAC: {gateway['mac']})")
+    print("=" * 60)
     
+    # ARP tablosunu göster
+    print("\n📋 ARP Tablosu:")
+    print("-" * 60)
+    print(f"{'IP Adresi':<15} {'MAC Adresi':<20} {'Arayüz':<10}")
+    print("-" * 60)
+    for entry in arp_table:
         print(f"{entry['ip']:<15} {entry['mac']:<20} {entry['interface']:<10}")
     
     # ARP spoofing tespiti
@@ -277,7 +252,10 @@ else:
     print("\n📊 Analiz Özeti:")
     print("-" * 60)
     print(f"Toplam kayıt sayısı: {len(arp_table)}")
-    print(f"Şüpheli kayıt sayısı: {len(suspicious_entries)}")
+    # Bilgi girişleri olmayan şüpheli kayıtların sayısını hesapla
+    gercek_supheli_sayisi = len([entry for entry in suspicious_entries 
+                               if entry["type"] not in ["info_broadcast", "info_multicast"]])
+    print(f"Şüpheli kayıt sayısı: {gercek_supheli_sayisi}")
     
     if suspicious_entries:
         şüpheli_tiplerini_say = defaultdict(int)
@@ -294,8 +272,12 @@ else:
             açıklama = tip_açıklamaları.get(tip, tip)
             print(f"- {açıklama}: {sayı}")
         
-        print("\n⚠️ Şüpheli durumlar tespit edildi. Ağınızda ARP spoofing saldırısı olabilir.")
-        print("⚠️ Özellikle birden fazla MAC adresine sahip bir ağ geçidi varsa, bu ciddi bir tehlike işaretidir.")
+        # Gerçek şüpheli durumlar varsa uyarı göster
+        if gercek_supheli_sayisi > 0:
+            print("\n⚠️ Şüpheli durumlar tespit edildi. Ağınızda ARP spoofing saldırısı olabilir.")
+            print("⚠️ Özellikle birden fazla MAC adresine sahip bir ağ geçidi varsa, bu ciddi bir tehlike işaretidir.")
+        else:
+            print("\n✅ Ağınız şu an için güvenli görünüyor.")
     else:
         print("\n✅ Ağınız şu an için güvenli görünüyor.")
     
@@ -505,12 +487,14 @@ class ARP_GUI:
                             "message": line,
                             "type": "info_broadcast_multicast"
                         })
+                        important_lines.append(line)
+                        # Broadcast/Multicast için is_safe'i false yapma
                     else:
                         suspicious_entries.append({
                             "message": line,
                             "type": "info_other"
                         })
-                    important_lines.append(line)
+                        important_lines.append(line)
                 # Başarı durumları
                 elif "✅" in line:
                     important_lines.append(line)
@@ -537,8 +521,8 @@ class ARP_GUI:
     
     def _update_ui(self, is_safe, important_lines, suspicious_entries):
         """Tarama sonuçlarına göre arayüzü günceller"""
-        # Gerçekten tehlikeli durumları filtrele - sadece info olmayan girdiler
-        real_threats = [entry for entry in suspicious_entries if not entry.get("type", "").startswith("info_")]
+        # Gerçekten tehlikeli durumları filtrele - info_broadcast_multicast tipindeki girdileri hariç tut
+        real_threats = [entry for entry in suspicious_entries if entry.get("type") != "info_broadcast_multicast"]
         
         # Gerçekten tehlike var mı kontrol et
         is_truly_safe = len(real_threats) == 0
@@ -621,13 +605,35 @@ class ARP_GUI:
         description_card.pack(fill=tk.X, pady=10)
         
         description = tk.Label(description_card, 
-                            text="Ağınızda şüpheli ARP etkinliği tespit edildi. Bu, bir saldırganın ağ trafiğinizi izlediğini gösterebilir. Aşağıdaki önlemleri almanız önerilir.",
+                            text="""ARP spoofing, ağınızda kötü niyetli bir cihazın kendisini başka bir cihaz 
+                                 gibi göstererek trafiği dinlemesi veya değiştirmesi durumudur.
+                                 
+                                 Bu saldırı, kredi kartı bilgileri, şifreler ve diğer hassas bilgilerin 
+                                 çalınmasına yol açabilir.""",
                             wraplength=430, justify="left", 
-                            font=("Arial", 11), bg=self.light_gray, fg="#202124")
-        description.pack(anchor="w")
+                            bg=self.light_gray, fg="#202124", font=("Arial", 10))
+        description.pack(fill=tk.X)
         
-        # Öneriler kartı
-        actions_card = tk.Frame(content, bg=self.light_gray,
+        # Tespit edilen tehditler
+        threats_label = tk.Label(content, text="Tespit Edilen Tehditler:", 
+                              font=("Arial", 12, "bold"), bg="#FFFFFF", fg="#202124")
+        threats_label.pack(anchor="w", pady=(15, 5))
+        
+        threats_card = tk.Frame(content, bg=self.light_gray, 
+                             highlightbackground=self.warning_color, highlightthickness=1,
+                             padx=15, pady=15)
+        threats_card.pack(fill=tk.X, pady=(0, 10))
+        
+        for entry in suspicious_entries:
+            message = entry.get("message", "")
+            if message:
+                threat_label = tk.Label(threats_card, text=message, 
+                                     wraplength=430, justify="left", 
+                                     bg=self.light_gray, fg="#202124", font=("Arial", 10))
+                threat_label.pack(pady=2, anchor="w")
+        
+        # Önerilen önlemler kartı
+        actions_card = tk.Frame(content, bg=self.light_gray, 
                              highlightbackground="#DADCE0", highlightthickness=1,
                              padx=15, pady=15)
         actions_card.pack(fill=tk.X, pady=10)
